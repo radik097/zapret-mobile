@@ -11,7 +11,7 @@ use std::net::ToSocketAddrs;
 #[cfg(target_os = "android")]
 use std::os::fd::AsRawFd;
 use std::os::raw::c_char;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -21,9 +21,15 @@ const MAX_INITIAL_BYTES: usize = 16 * 1024;
 const PROFILE_COMPATIBLE: u8 = 0;
 const PROFILE_BALANCED: u8 = 1;
 const PROFILE_AGGRESSIVE: u8 = 2;
+const PROFILE_ZAPTRET2: u8 = 3;
+const PROFILE_CUSTOM: u8 = 4;
+const CUSTOM_DELAY_MAX_MS: u64 = 5_000;
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static BLOCK_UDP_443: AtomicBool = AtomicBool::new(true);
 static STRATEGY_PROFILE: AtomicU8 = AtomicU8::new(PROFILE_BALANCED);
+static CUSTOM_SPLIT: AtomicUsize = AtomicUsize::new(1);
+static CUSTOM_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+static CONNECTION_FAILURES: AtomicU32 = AtomicU32::new(0);
 static SERVER: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
 static SOCKET_PROTECTOR: OnceLock<Mutex<Option<SocketProtector>>> = OnceLock::new();
 
@@ -81,7 +87,7 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configure(
     profile_id: i32,
     block_quic: u8,
 ) -> i32 {
-    if !(PROFILE_COMPATIBLE as i32..=PROFILE_AGGRESSIVE as i32).contains(&profile_id) {
+    if !(PROFILE_COMPATIBLE as i32..=PROFILE_CUSTOM as i32).contains(&profile_id) {
         return -1;
     }
     let vm = match env.get_java_vm() {
@@ -100,7 +106,34 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configure(
 
     STRATEGY_PROFILE.store(profile_id as u8, Ordering::SeqCst);
     BLOCK_UDP_443.store(block_quic != 0, Ordering::SeqCst);
+    CONNECTION_FAILURES.store(0, Ordering::SeqCst);
     0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configureCustomStrategy(
+    _env: *mut JNIEnv,
+    _class: JClass,
+    split_position: i32,
+    delay_ms: i64,
+) -> i32 {
+    if split_position < 1 || split_position as usize > MAX_INITIAL_BYTES {
+        return -1;
+    }
+    if delay_ms < 0 || delay_ms as u64 > CUSTOM_DELAY_MAX_MS {
+        return -2;
+    }
+    CUSTOM_SPLIT.store(split_position as usize, Ordering::SeqCst);
+    CUSTOM_DELAY_MS.store(delay_ms as u64, Ordering::SeqCst);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_pollFailureCount(
+    _env: *mut JNIEnv,
+    _class: JClass,
+) -> i32 {
+    CONNECTION_FAILURES.swap(0, Ordering::Relaxed) as i32
 }
 
 #[unsafe(no_mangle)]
@@ -414,10 +447,20 @@ fn handle_socks_client(mut client: TcpStream) -> std::io::Result<()> {
     match header[1] {
         0x01 => {
             let target = read_socks_target(&mut client, header[3])?;
-            let upstream = connect_target(&target)?;
+            let upstream = match connect_target(&target) {
+                Ok(stream) => stream,
+                Err(error) => {
+                    CONNECTION_FAILURES.fetch_add(1, Ordering::Relaxed);
+                    return Err(error);
+                }
+            };
             upstream.set_nodelay(true)?;
             write_socks_success(&mut client, 0)?;
-            relay_with_initial_strategy(client, upstream)
+            let result = relay_with_initial_strategy(client, upstream);
+            if result.is_err() {
+                CONNECTION_FAILURES.fetch_add(1, Ordering::Relaxed);
+            }
+            result
         }
         0x03 => handle_udp_associate(client, header[3]),
         _ => {
@@ -625,9 +668,30 @@ fn initial_strategy(packet: &[u8], profile: u8) -> Option<(usize, u64)> {
         PROFILE_AGGRESSIVE => tls_sni_start_split_position(packet)
             .or_else(|| http_host_start_split_position(packet))
             .map(|split| (split, 35)),
+        PROFILE_ZAPTRET2 => zaptret2_split_position(packet).map(|split| (split, 40)),
+        PROFILE_CUSTOM => {
+            if packet.len() < 2 {
+                None
+            } else {
+                let split = CUSTOM_SPLIT.load(Ordering::Relaxed).clamp(1, packet.len() - 1);
+                Some((split, CUSTOM_DELAY_MS.load(Ordering::Relaxed)))
+            }
+        }
         _ => tls_sni_split_position(packet)
             .or_else(|| http_host_split_position(packet))
             .map(|split| (split, 12)),
+    }
+}
+
+/// Zaptret2 ignores SNI/Host parsing entirely and splits right after the first
+/// TCP payload byte, mirroring the classic zapret raw-segmentation technique
+/// that defeats DPI engines which buffer on full-record boundaries rather than
+/// on the very first bytes of a stream.
+fn zaptret2_split_position(packet: &[u8]) -> Option<usize> {
+    if packet.len() < 2 {
+        None
+    } else {
+        Some(1)
     }
 }
 
@@ -829,6 +893,29 @@ mod tests {
         assert_eq!(balanced_delay, 12);
         assert!(aggressive_split < balanced_split);
         assert_eq!(aggressive_delay, 35);
+    }
+
+    #[test]
+    fn zaptret2_profile_splits_after_first_byte() {
+        let request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let (split, delay) = initial_strategy(request, PROFILE_ZAPTRET2).expect("zaptret2 strategy");
+        assert_eq!(split, 1);
+        assert_eq!(delay, 40);
+        assert_eq!(initial_strategy(&[0x16], PROFILE_ZAPTRET2), None);
+    }
+
+    #[test]
+    fn custom_profile_uses_configured_split_and_delay() {
+        let request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        CUSTOM_SPLIT.store(7, Ordering::SeqCst);
+        CUSTOM_DELAY_MS.store(99, Ordering::SeqCst);
+        let (split, delay) = initial_strategy(request, PROFILE_CUSTOM).expect("custom strategy");
+        assert_eq!(split, 7);
+        assert_eq!(delay, 99);
+
+        CUSTOM_SPLIT.store(usize::MAX, Ordering::SeqCst);
+        let (clamped_split, _) = initial_strategy(request, PROFILE_CUSTOM).expect("custom strategy");
+        assert_eq!(clamped_split, request.len() - 1);
     }
 
     #[test]

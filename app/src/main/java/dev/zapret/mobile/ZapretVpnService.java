@@ -28,6 +28,7 @@ public final class ZapretVpnService extends android.net.VpnService {
     private ParcelFileDescriptor tun;
     private Tun2SocksBridge tunBridge;
     private ConnectivityManager.NetworkCallback networkCallback;
+    private StrategyFallbackController fallbackController;
 
     @Override
     public void onCreate() {
@@ -65,7 +66,7 @@ public final class ZapretVpnService extends android.net.VpnService {
         }
 
         state.set(VpnState.STARTING);
-        startForeground(NOTIFICATION_ID, buildNotification());
+        startForeground(NOTIFICATION_ID, buildNotification(true, null));
 
         try {
             StrategyProfile profile = EngineSettings.getStrategyProfile(this);
@@ -73,6 +74,14 @@ public final class ZapretVpnService extends android.net.VpnService {
             int configureResult = NativeZapretEngine.configure(this, profile.getNativeId(), blockQuic);
             if (configureResult != 0) {
                 throw new IllegalStateException("Native engine configuration failed: " + configureResult);
+            }
+            if (profile == StrategyProfile.CUSTOM) {
+                int splitPosition = EngineSettings.getCustomStrategySplitPosition(this);
+                long delayMs = EngineSettings.getCustomStrategyDelayMs(this);
+                int customResult = NativeZapretEngine.configureCustomStrategy(splitPosition, delayMs);
+                if (customResult != 0) {
+                    throw new IllegalStateException("Custom strategy configuration failed: " + customResult);
+                }
             }
             NativeZapretEngine.start(SOCKS_PORT);
             Builder builder = new Builder()
@@ -89,6 +98,9 @@ public final class ZapretVpnService extends android.net.VpnService {
             }
             tunBridge = Tun2SocksBridge.start(this, tun, SOCKS_PORT);
             registerNetworkCallback();
+            fallbackController = new StrategyFallbackController(this, profile, blockQuic);
+            fallbackController.setListener(this::onStrategyFallback);
+            fallbackController.start();
             state.set(VpnState.RUNNING);
             Log.i(TAG, "Strategy profile: " + profile.name().toLowerCase(java.util.Locale.ROOT));
             Log.i(TAG, "QUIC/UDP 443 policy: " + (blockQuic ? "blocked" : "allowed"));
@@ -146,6 +158,10 @@ public final class ZapretVpnService extends android.net.VpnService {
         Log.i(TAG, "Stopping VPN");
         state.set(VpnState.STOPPING);
         unregisterNetworkCallback();
+        if (fallbackController != null) {
+            fallbackController.stop();
+            fallbackController = null;
+        }
         if (tunBridge != null) {
             tunBridge.stop();
             tunBridge = null;
@@ -161,8 +177,24 @@ public final class ZapretVpnService extends android.net.VpnService {
         }
         stopForeground(STOP_FOREGROUND_REMOVE);
         state.set(VpnState.STOPPED);
+        postStoppedNotification();
         stopSelf();
         Log.i(TAG, "VPN stopped");
+    }
+
+    private void postStoppedNotification() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.notify(NOTIFICATION_ID, buildNotification(false, null));
+        }
+    }
+
+    private void onStrategyFallback(StrategyProfile newProfile) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            String text = getString(R.string.notification_text_fallback, getString(newProfile.getLabelResource()));
+            manager.notify(NOTIFICATION_ID, buildNotification(true, text));
+        }
     }
 
     private void registerNetworkCallback() {
@@ -198,22 +230,53 @@ public final class ZapretVpnService extends android.net.VpnService {
         networkCallback = null;
     }
 
-    private Notification buildNotification() {
-        Intent intent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
+    private Notification buildNotification(boolean running, String overrideText) {
+        Intent contentIntent = new Intent(this, MainActivity.class);
+        PendingIntent contentPendingIntent = PendingIntent.getActivity(
             this,
             0,
-            intent,
+            contentIntent,
             PendingIntent.FLAG_IMMUTABLE
         );
 
-        return new Notification.Builder(this, CHANNEL_ID)
+        String text = overrideText != null
+            ? overrideText
+            : getString(running ? R.string.notification_text : R.string.notification_text_stopped);
+        Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build();
+            .setContentTitle(getString(running ? R.string.notification_title : R.string.notification_title_stopped))
+            .setContentText(text)
+            .setContentIntent(contentPendingIntent)
+            .setOngoing(running);
+
+        if (running) {
+            builder.addAction(buildNotificationAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                getString(R.string.notification_action_stop),
+                ACTION_STOP,
+                1
+            ));
+        } else {
+            builder.addAction(buildNotificationAction(
+                android.R.drawable.ic_media_play,
+                getString(R.string.notification_action_start),
+                ACTION_START,
+                2
+            ));
+        }
+        return builder.build();
+    }
+
+    private Notification.Action buildNotificationAction(int iconResource, CharSequence label, String action, int requestCode) {
+        Intent intent = new Intent(this, ZapretVpnService.class).setAction(action);
+        PendingIntent pendingIntent = PendingIntent.getService(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        android.graphics.drawable.Icon icon = android.graphics.drawable.Icon.createWithResource(this, iconResource);
+        return new Notification.Action.Builder(icon, label, pendingIntent).build();
     }
 
     private void createNotificationChannel() {

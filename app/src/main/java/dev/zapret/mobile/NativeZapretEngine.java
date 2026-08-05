@@ -16,6 +16,10 @@ public final class NativeZapretEngine {
         boolean blockQuic
     );
 
+    public static native int configureCustomStrategy(int splitPosition, long delayMs);
+
+    public static native int pollFailureCount();
+
     public static native int start(int socksPort);
 
     public static native void stop();

@@ -1,0 +1,22 @@
+{
+  "packs": [
+    {
+      "id": "zaptret2-deep-split",
+      "name": "Zaptret2 Deep Split",
+      "splitPosition": 4,
+      "delayMs": 60
+    },
+    {
+      "id": "slow-fragment",
+      "name": "Slow Fragment",
+      "splitPosition": 2,
+      "delayMs": 250
+    },
+    {
+      "id": "fast-nudge",
+      "name": "Fast Nudge",
+      "splitPosition": 1,
+      "delayMs": 5
+    }
+  ]
+}

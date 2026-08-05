@@ -1,55 +1,43 @@
 package dev.zapret.mobile;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.net.VpnService;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.ArrayAdapter;
-import android.widget.AdapterView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Spinner;
-import android.widget.Switch;
 import android.widget.TextView;
-
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 public final class MainActivity extends Activity {
     private static final int VPN_REQUEST = 710;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 711;
+
     private TextView status;
-    private Spinner profileSpinner;
-    private TextView routingSummary;
-    private Switch routingSwitch;
-    private Switch quicSwitch;
-    private Button chooseApps;
-    private AppRoutingSettings.Snapshot routingSettings;
+    private AppTheme currentTheme;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        routingSettings = AppRoutingSettings.load(this);
+        currentTheme = ThemeSettings.getTheme(this);
         setContentView(buildContent());
         updateStatus(getString(R.string.state_stopped));
-        updateRoutingUi();
+        requestNotificationPermissionIfNeeded();
+        UpdateManager.checkOnLaunch(this);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        routingSettings = AppRoutingSettings.load(this);
-        updateRoutingUi();
+        AppTheme latestTheme = ThemeSettings.getTheme(this);
+        if (latestTheme != currentTheme) {
+            currentTheme = latestTheme;
+            setContentView(buildContent());
+            updateStatus(getString(R.string.state_stopped));
+        }
     }
 
     @Override
@@ -63,144 +51,76 @@ public final class MainActivity extends Activity {
     }
 
     private ScrollView buildContent() {
-        int pad = dp(24);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, pad, pad, pad);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setBackgroundColor(0xFFF6F8F7);
+        root.setBackgroundColor(currentTheme.background);
 
-        TextView title = new TextView(this);
-        title.setText(getString(R.string.app_name));
-        title.setTextColor(0xFF151A1D);
-        title.setTextSize(30);
-        title.setGravity(Gravity.CENTER);
-        root.addView(title, fullWidth());
+        root.addView(UiKit.headerBanner(
+            this,
+            currentTheme,
+            getString(R.string.app_name),
+            getString(R.string.subtitle)
+        ), UiKit.fullWidth());
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText(R.string.subtitle);
-        subtitle.setTextColor(0xFF42514A);
-        subtitle.setTextSize(15);
-        subtitle.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams subtitleParams = fullWidth();
-        subtitleParams.setMargins(0, dp(12), 0, dp(20));
-        root.addView(subtitle, subtitleParams);
+        int pad = UiKit.dp(this, 24);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(pad, pad, pad, pad);
+        body.setGravity(Gravity.CENTER_HORIZONTAL);
 
+        LinearLayout statusCard = UiKit.card(this, currentTheme);
+        statusCard.setGravity(Gravity.CENTER_HORIZONTAL);
         status = new TextView(this);
-        status.setTextColor(0xFF0F8A5F);
+        status.setTextColor(currentTheme.accent);
         status.setTextSize(18);
         status.setGravity(Gravity.CENTER);
-        root.addView(status, fullWidth());
+        statusCard.addView(status, UiKit.fullWidth());
+        body.addView(statusCard, UiKit.fullWidth());
 
-        TextView profileTitle = new TextView(this);
-        profileTitle.setText(R.string.profile_title);
-        profileTitle.setTextColor(0xFF151A1D);
-        profileTitle.setTextSize(18);
-        LinearLayout.LayoutParams profileTitleParams = fullWidth();
-        profileTitleParams.setMargins(0, dp(20), 0, dp(4));
-        root.addView(profileTitle, profileTitleParams);
-
-        StrategyProfile[] profiles = StrategyProfile.values();
-        String[] profileLabels = new String[profiles.length];
-        for (int index = 0; index < profiles.length; index += 1) {
-            profileLabels[index] = getString(profiles[index].getLabelResource());
-        }
-        ArrayAdapter<String> profileAdapter = new ArrayAdapter<>(
-            this,
-            android.R.layout.simple_spinner_item,
-            profileLabels
-        );
-        profileAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        profileSpinner = new Spinner(this);
-        profileSpinner.setAdapter(profileAdapter);
-        profileSpinner.setSelection(EngineSettings.getStrategyProfile(this).ordinal());
-        profileSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, android.view.View view, int position, long id) {
-                EngineSettings.setStrategyProfile(MainActivity.this, profiles[position]);
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
-        });
-        root.addView(profileSpinner, fullWidth());
-
-        TextView routingTitle = new TextView(this);
-        routingTitle.setText(R.string.routing_title);
-        routingTitle.setTextColor(0xFF151A1D);
-        routingTitle.setTextSize(18);
-        LinearLayout.LayoutParams routingTitleParams = fullWidth();
-        routingTitleParams.setMargins(0, dp(24), 0, dp(4));
-        root.addView(routingTitle, routingTitleParams);
-
-        routingSwitch = new Switch(this);
-        routingSwitch.setText(R.string.routing_selected_only);
-        routingSwitch.setChecked(routingSettings.isSelectedOnly());
-        routingSwitch.setOnCheckedChangeListener((button, checked) -> {
-            AppRoutingSettings.save(this, checked, routingSettings.getPackages());
-            routingSettings = AppRoutingSettings.load(this);
-            updateRoutingUi();
-        });
-        root.addView(routingSwitch, fullWidth());
-
-        routingSummary = new TextView(this);
-        routingSummary.setTextColor(0xFF42514A);
-        routingSummary.setTextSize(14);
-        LinearLayout.LayoutParams routingSummaryParams = fullWidth();
-        routingSummaryParams.setMargins(0, dp(4), 0, dp(8));
-        root.addView(routingSummary, routingSummaryParams);
-
-        chooseApps = new Button(this);
-        chooseApps.setText(R.string.routing_choose_apps);
-        chooseApps.setOnClickListener(v -> showAppSelectionDialog());
-        root.addView(chooseApps, fullWidth());
-
-        quicSwitch = new Switch(this);
-        quicSwitch.setText(R.string.block_quic);
-        quicSwitch.setChecked(EngineSettings.isQuicBlocked(this));
-        quicSwitch.setOnCheckedChangeListener((button, checked) ->
-            EngineSettings.setQuicBlocked(this, checked)
-        );
-        LinearLayout.LayoutParams quicParams = fullWidth();
-        quicParams.setMargins(0, dp(12), 0, 0);
-        root.addView(quicSwitch, quicParams);
-
-        Button start = new Button(this);
-        start.setText(R.string.start_vpn);
+        Button start = UiKit.primaryButton(this, currentTheme, getString(R.string.start_vpn));
         start.setOnClickListener(v -> requestVpn());
-        LinearLayout.LayoutParams buttonParams = fullWidth();
-        buttonParams.setMargins(0, dp(24), 0, dp(10));
-        root.addView(start, buttonParams);
+        body.addView(start, UiKit.fullWidth(this, 20, 10));
 
-        Button stop = new Button(this);
-        stop.setText(R.string.stop_vpn);
+        Button stop = UiKit.dangerButton(this, getString(R.string.stop_vpn));
         stop.setOnClickListener(v -> {
             Intent intent = new Intent(this, ZapretVpnService.class);
             intent.setAction(ZapretVpnService.ACTION_STOP);
             startService(intent);
             updateStatus(getString(R.string.state_stopping));
         });
-        root.addView(stop, fullWidth());
+        body.addView(stop, UiKit.fullWidth(this, 0, 20));
 
-        TextView diagnostics = new TextView(this);
-        diagnostics.setText(getString(R.string.diagnostics, NativeZapretEngine.version()));
-        diagnostics.setTextColor(0xFF151A1D);
-        diagnostics.setTextSize(14);
-        LinearLayout.LayoutParams diagnosticsParams = fullWidth();
-        diagnosticsParams.setMargins(0, dp(24), 0, 0);
-        root.addView(diagnostics, diagnosticsParams);
+        LinearLayout navRow = new LinearLayout(this);
+        navRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams navButtonParams = new LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        );
+
+        Button strategiesButton = UiKit.outlineButton(this, currentTheme, getString(R.string.nav_strategies));
+        strategiesButton.setOnClickListener(v -> startActivity(new Intent(this, StrategiesActivity.class)));
+        LinearLayout.LayoutParams strategiesParams = new LinearLayout.LayoutParams(navButtonParams);
+        strategiesParams.setMarginEnd(UiKit.dp(this, 8));
+        navRow.addView(strategiesButton, strategiesParams);
+
+        Button settingsButton = UiKit.outlineButton(this, currentTheme, getString(R.string.nav_settings));
+        settingsButton.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        navRow.addView(settingsButton, navButtonParams);
+
+        body.addView(navRow, UiKit.fullWidth());
+
+        root.addView(body, UiKit.fullWidth());
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(currentTheme.background);
         scroll.addView(root);
         return scroll;
     }
 
     private void requestVpn() {
-        routingSettings = AppRoutingSettings.load(this);
+        AppRoutingSettings.Snapshot routingSettings = AppRoutingSettings.load(this);
         if (routingSettings.isSelectedOnly() && routingSettings.getPackages().isEmpty()) {
             updateStatus(getString(R.string.state_select_apps));
-            showAppSelectionDialog();
+            startActivity(new Intent(this, SettingsActivity.class));
             return;
         }
         updateStatus(getString(R.string.state_preparing));
@@ -225,103 +145,13 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void updateRoutingUi() {
-        if (routingSettings == null || routingSummary == null || routingSwitch == null || chooseApps == null) {
-            return;
+    private void requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+            && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                new String[] {android.Manifest.permission.POST_NOTIFICATIONS},
+                NOTIFICATION_PERMISSION_REQUEST
+            );
         }
-        if (routingSwitch.isChecked() != routingSettings.isSelectedOnly()) {
-            routingSwitch.setChecked(routingSettings.isSelectedOnly());
-        }
-        int selectedCount = routingSettings.getPackages().size();
-        if (!routingSettings.isSelectedOnly()) {
-            routingSummary.setText(R.string.routing_all_apps_summary);
-        } else if (selectedCount == 0) {
-            routingSummary.setText(R.string.routing_no_apps_summary);
-        } else {
-            routingSummary.setText(getString(R.string.routing_selected_summary, selectedCount));
-        }
-        chooseApps.setEnabled(routingSettings.isSelectedOnly());
-    }
-
-    private void showAppSelectionDialog() {
-        List<RoutableApp> apps = loadRoutableApps();
-        if (apps.isEmpty()) {
-            updateStatus(getString(R.string.state_no_apps_found));
-            return;
-        }
-
-        Set<String> selectedPackages = new HashSet<>(routingSettings.getPackages());
-        String[] labels = new String[apps.size()];
-        boolean[] checked = new boolean[apps.size()];
-        for (int index = 0; index < apps.size(); index += 1) {
-            RoutableApp app = apps.get(index);
-            labels[index] = app.label + " (" + app.packageName + ")";
-            checked[index] = selectedPackages.contains(app.packageName);
-        }
-
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.routing_dialog_title)
-            .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> {
-                String packageName = apps.get(which).packageName;
-                if (isChecked) {
-                    selectedPackages.add(packageName);
-                } else {
-                    selectedPackages.remove(packageName);
-                }
-            })
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.routing_save, (dialog, which) -> {
-                AppRoutingSettings.save(this, routingSwitch.isChecked(), selectedPackages);
-                routingSettings = AppRoutingSettings.load(this);
-                updateRoutingUi();
-            })
-            .show();
-    }
-
-    private List<RoutableApp> loadRoutableApps() {
-        PackageManager packageManager = getPackageManager();
-        Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
-        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-        List<ResolveInfo> resolvedApps = packageManager.queryIntentActivities(launcherIntent, 0);
-        Map<String, RoutableApp> uniqueApps = new HashMap<>();
-        for (ResolveInfo resolvedApp : resolvedApps) {
-            if (resolvedApp.activityInfo == null) {
-                continue;
-            }
-            String packageName = resolvedApp.activityInfo.packageName;
-            if (getPackageName().equals(packageName)) {
-                continue;
-            }
-            CharSequence loadedLabel = resolvedApp.loadLabel(packageManager);
-            String label = loadedLabel == null ? packageName : loadedLabel.toString().trim();
-            uniqueApps.put(packageName, new RoutableApp(label.isEmpty() ? packageName : label, packageName));
-        }
-
-        List<RoutableApp> apps = new ArrayList<>(uniqueApps.values());
-        apps.sort(Comparator
-            .comparing((RoutableApp app) -> app.label, String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(app -> app.packageName));
-        return apps;
-    }
-
-    private static final class RoutableApp {
-        private final String label;
-        private final String packageName;
-
-        private RoutableApp(String label, String packageName) {
-            this.label = label;
-            this.packageName = packageName;
-        }
-    }
-
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    private LinearLayout.LayoutParams fullWidth() {
-        return new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        );
     }
 }

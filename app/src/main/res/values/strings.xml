@@ -4,14 +4,20 @@
     <string name="notification_channel">Zapret Mobile VPN</string>
     <string name="notification_title">Zapret Mobile is running</string>
     <string name="notification_text">Local VpnService and Rust DPI engine are active.</string>
+    <string name="notification_title_stopped">Zapret Mobile is stopped</string>
+    <string name="notification_text_stopped">Tap Start to protect this device again.</string>
+    <string name="notification_action_start">Start</string>
+    <string name="notification_action_stop">Stop</string>
+    <string name="notification_text_fallback">Auto-switched strategy to %1$s after connection issues.</string>
     <string name="subtitle">Rootless local VpnService with a Rust DPI engine. No remote VPN server, no IP change, no TLS MITM.</string>
     <string name="start_vpn">Start VPN</string>
     <string name="stop_vpn">Stop VPN</string>
     <string name="diagnostics">Engine: %1$s\nSOCKS: 127.0.0.1:1080\nTraffic: IPv4 TCP/UDP</string>
-    <string name="profile_title">Strategy profile</string>
     <string name="profile_compatible">Compatible</string>
     <string name="profile_balanced">Balanced</string>
     <string name="profile_aggressive">Aggressive</string>
+    <string name="profile_zaptret2">Zaptret2</string>
+    <string name="profile_custom">Custom (downloaded)</string>
     <string name="routing_title">App routing</string>
     <string name="routing_selected_only">Route selected apps only</string>
     <string name="routing_all_apps_summary">All apps are routed. Changes apply on the next VPN start.</string>
@@ -29,4 +35,43 @@
     <string name="state_permission_denied">VPN permission denied</string>
     <string name="state_select_apps">Select at least one app</string>
     <string name="state_no_apps_found">No launchable apps found</string>
+
+    <string name="nav_settings">Settings</string>
+    <string name="nav_strategies">Strategies</string>
+
+    <string name="theme_title">Design</string>
+    <string name="theme_subtitle">Pick a visual theme for the app.</string>
+    <string name="theme_classic">Classic Green</string>
+    <string name="theme_midnight">Midnight</string>
+    <string name="theme_aurora">Aurora</string>
+
+    <string name="engine_title">Engine</string>
+    <string name="about_title">About</string>
+
+    <string name="update_title">Updates</string>
+    <string name="update_current_version">Installed version: %1$s</string>
+    <string name="update_check_now">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">You are on the latest version.</string>
+    <string name="update_check_error">Could not check for updates. Try again later.</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_message">Version %1$s is available. Download and install it now?</string>
+    <string name="update_download_install">Download &amp; Install</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_download_error">Failed to download the update.</string>
+    <string name="update_grant_install_permission">Allow Zapret Mobile to install apps, then try again.</string>
+
+    <string name="strategies_active_title">Active strategy</string>
+    <string name="strategies_active_format">Currently using: %1$s</string>
+    <string name="strategies_builtin_title">Built-in profiles</string>
+    <string name="strategies_builtin_subtitle">Compatible, Balanced, Aggressive and Zaptret2. Changes apply on the next VPN start.</string>
+    <string name="strategies_downloaded_title">Downloaded strategies</string>
+    <string name="strategies_downloaded_subtitle">Fetch custom split/delay strategy packs and switch to one instantly.</string>
+    <string name="strategies_refresh">Refresh from server</string>
+    <string name="strategies_refreshing">Fetching strategy packs…</string>
+    <string name="strategies_refresh_success">Loaded %1$d strategy pack(s).</string>
+    <string name="strategies_refresh_error">Could not fetch strategy packs. Showing cached list.</string>
+    <string name="strategies_none_cached">No downloaded strategies yet. Tap Refresh.</string>
+    <string name="strategies_use">Use</string>
+    <string name="strategies_selected">Switched to %1$s.</string>
 </resources>

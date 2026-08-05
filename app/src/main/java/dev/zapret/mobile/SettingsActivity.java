@@ -1,0 +1,261 @@
+package dev.zapret.mobile;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.os.Bundle;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.Switch;
+import android.widget.TextView;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+public final class SettingsActivity extends Activity {
+    private AppTheme currentTheme;
+    private AppRoutingSettings.Snapshot routingSettings;
+    private TextView routingSummary;
+    private Switch routingSwitch;
+    private Button chooseApps;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        currentTheme = ThemeSettings.getTheme(this);
+        routingSettings = AppRoutingSettings.load(this);
+        setContentView(buildContent());
+        updateRoutingUi();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        routingSettings = AppRoutingSettings.load(this);
+        updateRoutingUi();
+    }
+
+    private ScrollView buildContent() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(currentTheme.background);
+        root.addView(
+            UiKit.headerBanner(this, currentTheme, getString(R.string.nav_settings), null),
+            UiKit.fullWidth()
+        );
+
+        int pad = UiKit.dp(this, 24);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(pad, pad, pad, pad);
+
+        body.addView(buildThemeCard(), UiKit.fullWidth(this, 0, 16));
+        body.addView(buildRoutingCard(), UiKit.fullWidth(this, 0, 16));
+        body.addView(buildEngineCard(), UiKit.fullWidth(this, 0, 16));
+        body.addView(buildUpdateCard(), UiKit.fullWidth(this, 0, 16));
+        body.addView(buildAboutCard(), UiKit.fullWidth());
+
+        root.addView(body, UiKit.fullWidth());
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(currentTheme.background);
+        scroll.addView(root);
+        return scroll;
+    }
+
+    private LinearLayout buildThemeCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(UiKit.sectionTitle(this, currentTheme, getString(R.string.theme_title)), UiKit.fullWidth());
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.theme_subtitle)),
+            UiKit.fullWidth(this, 4, 12)
+        );
+
+        AppTheme[] themes = AppTheme.values();
+        String[] labels = new String[themes.length];
+        for (int index = 0; index < themes.length; index += 1) {
+            labels[index] = getString(themes[index].labelResource);
+        }
+        Spinner themeSpinner = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        themeSpinner.setAdapter(adapter);
+        themeSpinner.setSelection(currentTheme.ordinal());
+        themeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, android.view.View view, int position, long id) {
+                AppTheme selected = themes[position];
+                if (selected != currentTheme) {
+                    ThemeSettings.setTheme(SettingsActivity.this, selected);
+                    currentTheme = selected;
+                    setContentView(buildContent());
+                    updateRoutingUi();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        card.addView(themeSpinner, UiKit.fullWidth());
+        return card;
+    }
+
+    private LinearLayout buildRoutingCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(UiKit.sectionTitle(this, currentTheme, getString(R.string.routing_title)), UiKit.fullWidth());
+
+        routingSwitch = UiKit.styledSwitch(this, currentTheme, getString(R.string.routing_selected_only));
+        routingSwitch.setChecked(routingSettings.isSelectedOnly());
+        routingSwitch.setOnCheckedChangeListener((button, checked) -> {
+            AppRoutingSettings.save(this, checked, routingSettings.getPackages());
+            routingSettings = AppRoutingSettings.load(this);
+            updateRoutingUi();
+        });
+        card.addView(routingSwitch, UiKit.fullWidth(this, 8, 0));
+
+        routingSummary = UiKit.bodyText(this, currentTheme, "");
+        card.addView(routingSummary, UiKit.fullWidth(this, 4, 8));
+
+        chooseApps = UiKit.outlineButton(this, currentTheme, getString(R.string.routing_choose_apps));
+        chooseApps.setOnClickListener(v -> showAppSelectionDialog());
+        card.addView(chooseApps, UiKit.fullWidth());
+        return card;
+    }
+
+    private LinearLayout buildEngineCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(UiKit.sectionTitle(this, currentTheme, getString(R.string.engine_title)), UiKit.fullWidth());
+
+        Switch quicSwitch = UiKit.styledSwitch(this, currentTheme, getString(R.string.block_quic));
+        quicSwitch.setChecked(EngineSettings.isQuicBlocked(this));
+        quicSwitch.setOnCheckedChangeListener((button, checked) -> EngineSettings.setQuicBlocked(this, checked));
+        card.addView(quicSwitch, UiKit.fullWidth(this, 8, 0));
+        return card;
+    }
+
+    private LinearLayout buildUpdateCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(UiKit.sectionTitle(this, currentTheme, getString(R.string.update_title)), UiKit.fullWidth());
+        TextView versionText = UiKit.bodyText(
+            this,
+            currentTheme,
+            getString(R.string.update_current_version, UpdateManager.currentVersionName(this))
+        );
+        card.addView(versionText, UiKit.fullWidth(this, 4, 12));
+
+        Button checkButton = UiKit.outlineButton(this, currentTheme, getString(R.string.update_check_now));
+        checkButton.setOnClickListener(v -> UpdateManager.checkManually(this));
+        card.addView(checkButton, UiKit.fullWidth());
+        return card;
+    }
+
+    private LinearLayout buildAboutCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(UiKit.sectionTitle(this, currentTheme, getString(R.string.about_title)), UiKit.fullWidth());
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.diagnostics, NativeZapretEngine.version())),
+            UiKit.fullWidth(this, 4, 0)
+        );
+        return card;
+    }
+
+    private void updateRoutingUi() {
+        if (routingSummary == null || routingSwitch == null || chooseApps == null) {
+            return;
+        }
+        if (routingSwitch.isChecked() != routingSettings.isSelectedOnly()) {
+            routingSwitch.setChecked(routingSettings.isSelectedOnly());
+        }
+        int selectedCount = routingSettings.getPackages().size();
+        if (!routingSettings.isSelectedOnly()) {
+            routingSummary.setText(R.string.routing_all_apps_summary);
+        } else if (selectedCount == 0) {
+            routingSummary.setText(R.string.routing_no_apps_summary);
+        } else {
+            routingSummary.setText(getString(R.string.routing_selected_summary, selectedCount));
+        }
+        chooseApps.setEnabled(routingSettings.isSelectedOnly());
+    }
+
+    private void showAppSelectionDialog() {
+        List<RoutableApp> apps = loadRoutableApps();
+        if (apps.isEmpty()) {
+            android.widget.Toast.makeText(this, R.string.state_no_apps_found, android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Set<String> selectedPackages = new HashSet<>(routingSettings.getPackages());
+        String[] labels = new String[apps.size()];
+        boolean[] checked = new boolean[apps.size()];
+        for (int index = 0; index < apps.size(); index += 1) {
+            RoutableApp app = apps.get(index);
+            labels[index] = app.label + " (" + app.packageName + ")";
+            checked[index] = selectedPackages.contains(app.packageName);
+        }
+
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.routing_dialog_title)
+            .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> {
+                String packageName = apps.get(which).packageName;
+                if (isChecked) {
+                    selectedPackages.add(packageName);
+                } else {
+                    selectedPackages.remove(packageName);
+                }
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.routing_save, (dialog, which) -> {
+                AppRoutingSettings.save(this, routingSwitch.isChecked(), selectedPackages);
+                routingSettings = AppRoutingSettings.load(this);
+                updateRoutingUi();
+            })
+            .show();
+    }
+
+    private List<RoutableApp> loadRoutableApps() {
+        PackageManager packageManager = getPackageManager();
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> resolvedApps = packageManager.queryIntentActivities(launcherIntent, 0);
+        Map<String, RoutableApp> uniqueApps = new HashMap<>();
+        for (ResolveInfo resolvedApp : resolvedApps) {
+            if (resolvedApp.activityInfo == null) {
+                continue;
+            }
+            String packageName = resolvedApp.activityInfo.packageName;
+            if (getPackageName().equals(packageName)) {
+                continue;
+            }
+            CharSequence loadedLabel = resolvedApp.loadLabel(packageManager);
+            String label = loadedLabel == null ? packageName : loadedLabel.toString().trim();
+            uniqueApps.put(packageName, new RoutableApp(label.isEmpty() ? packageName : label, packageName));
+        }
+
+        List<RoutableApp> apps = new ArrayList<>(uniqueApps.values());
+        apps.sort(Comparator
+            .comparing((RoutableApp app) -> app.label, String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(app -> app.packageName));
+        return apps;
+    }
+
+    private static final class RoutableApp {
+        private final String label;
+        private final String packageName;
+
+        private RoutableApp(String label, String packageName) {
+            this.label = label;
+            this.packageName = packageName;
+        }
+    }
+}
