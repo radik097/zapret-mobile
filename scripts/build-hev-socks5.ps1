@@ -12,9 +12,20 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $root "app\src\main\jniLibs"
 }
 
-$env:ANDROID_SDK_ROOT = "D:\Android\Sdk"
-$env:ANDROID_HOME = "D:\Android\Sdk"
-$env:ANDROID_NDK_HOME = "D:\Android\Sdk\ndk\28.2.13676358"
+$ndkPackageVersion = "28.2.13676358"
+if ([string]::IsNullOrWhiteSpace($env:ANDROID_SDK_ROOT)) {
+    $env:ANDROID_SDK_ROOT = if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) { "D:\Android\Sdk" } else { $env:ANDROID_HOME }
+}
+if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
+    $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
+}
+if ([string]::IsNullOrWhiteSpace($env:ANDROID_NDK_HOME)) {
+    $env:ANDROID_NDK_HOME = if ([string]::IsNullOrWhiteSpace($env:ANDROID_NDK_ROOT)) {
+        Join-Path $env:ANDROID_SDK_ROOT "ndk\$ndkPackageVersion"
+    } else {
+        $env:ANDROID_NDK_ROOT
+    }
+}
 $env:ANDROID_NDK_ROOT = $env:ANDROID_NDK_HOME
 $env:PATH = "$env:ANDROID_NDK_HOME;$env:ANDROID_SDK_ROOT\platform-tools;$env:PATH"
 

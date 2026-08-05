@@ -38,11 +38,19 @@ val rustCrateDir = rootProject.layout.projectDirectory.dir("native-engine/rust/z
 val rustOutputDir = project.layout.projectDirectory.dir("src/main/jniLibs")
 val hevBuildScript = rootProject.layout.projectDirectory.file("scripts/build-hev-socks5.ps1")
 
+val ndkPackageVersion = "28.2.13676358"
+val resolvedAndroidSdkRoot = System.getenv("ANDROID_SDK_ROOT")
+    ?: System.getenv("ANDROID_HOME")
+    ?: "D:\\Android\\Sdk"
+val resolvedAndroidNdkHome = System.getenv("ANDROID_NDK_HOME")
+    ?: System.getenv("ANDROID_NDK_ROOT")
+    ?: "$resolvedAndroidSdkRoot\\ndk\\$ndkPackageVersion"
+
 tasks.register<Exec>("buildRustAndroid") {
     workingDir = rustCrateDir.asFile
-    environment("ANDROID_NDK_HOME", "D:\\Android\\Sdk\\ndk\\28.2.13676358")
-    environment("ANDROID_NDK_ROOT", "D:\\Android\\Sdk\\ndk\\28.2.13676358")
-    environment("ANDROID_SDK_ROOT", "D:\\Android\\Sdk")
+    environment("ANDROID_NDK_HOME", resolvedAndroidNdkHome)
+    environment("ANDROID_NDK_ROOT", resolvedAndroidNdkHome)
+    environment("ANDROID_SDK_ROOT", resolvedAndroidSdkRoot)
     commandLine(
         "cargo",
         "ndk",
@@ -59,6 +67,10 @@ tasks.register<Exec>("buildRustAndroid") {
 
 tasks.register<Exec>("buildHevSocks5Tunnel") {
     workingDir = rootProject.layout.projectDirectory.asFile
+    environment("ANDROID_NDK_HOME", resolvedAndroidNdkHome)
+    environment("ANDROID_NDK_ROOT", resolvedAndroidNdkHome)
+    environment("ANDROID_SDK_ROOT", resolvedAndroidSdkRoot)
+    environment("ANDROID_HOME", resolvedAndroidSdkRoot)
     commandLine(
         "powershell",
         "-ExecutionPolicy",

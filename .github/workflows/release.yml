@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        shell: pwsh
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.1.0" "ndk;28.2.13676358" "cmake;3.31.6"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $content = Get-Content app/build.gradle.kts -Raw
+          if ($content -notmatch 'versionName\s*=\s*"([^"]+)"') {
+            throw "Could not find versionName in app/build.gradle.kts"
+          }
+          $versionName = $Matches[1]
+          $tag = "v$versionName"
+          Write-Host "App versionName: $versionName (tag: $tag)"
+          "version_name=$versionName" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Verify tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $expected = "${{ steps.version.outputs.tag }}"
+          $actual = "${{ github.ref_name }}"
+          if ($expected -ne $actual) {
+            throw "Tag '$actual' does not match app versionName ('$expected'). Bump versionName in app/build.gradle.kts before tagging."
+          }
+
+      - name: Test
+        run: .\gradlew.bat test
+
+      - name: Build debug APK
+        run: .\gradlew.bat assembleDebug
+
+      - name: Rename APK
+        id: apk
+        shell: pwsh
+        run: |
+          $dest = "zapret-mobile-${{ steps.version.outputs.version_name }}.apk"
+          Copy-Item "app\build\outputs\apk\debug\app-debug.apk" $dest
+          "path=$dest" >> $env:GITHUB_OUTPUT
+
+      - name: Create or update release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $apk = "${{ steps.apk.outputs.path }}"
+          $exists = gh release view $tag --repo ${{ github.repository }} 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $apk --repo ${{ github.repository }} --clobber
+          } else {
+            gh release create $tag $apk --repo ${{ github.repository }} --title "Zapret Mobile $tag" --generate-notes
+          }
