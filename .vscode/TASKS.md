@@ -193,3 +193,37 @@
 Проверка - Rust unit-тесты прошли 8/8; `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug` прошёл; `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1 -AggressiveProfile` прошёл. Persisted XML содержит `strategy_profile=2`; JUnit profile/start/stop имеют 0 failures; logcat содержит `Strategy profile: aggressive`; aggressive report делит после `Host: b`, тогда как balanced report делит после `Host: blocked`.
 
 Артефакт - `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`, 2,433,023 bytes, SHA-256 `4CAA7B59DEB25C80560AFDBDF8699ED27DE6205376939809E260A1F00C85083C`.
+
+## 2026-08-06 - Native outbound socket protection
+
+Проблема - Rust outbound TCP/UDP использовал только package-level исключение приложения из VPN, без обязательного `VpnService.protect(fd)` для каждого сокета.
+
+Причина - native engine создавал уже подключённый `TcpStream` и не имел JavaVM/GlobalRef для вызова Android API из worker threads.
+
+Решение - зарегистрировать `ZapretVpnService` через JNI configure, создавать TCP socket до connect, вызывать Java `protectSocket(fd)` из attached Rust thread и защищать UDP upstream socket до send.
+
+Что сделано - добавлены Rust crates `jni 0.21.1` и `socket2 0.5.10`; обновлены `Cargo.toml`, `Cargo.lock`, `lib.rs`, `NativeZapretEngine.java`, `ZapretVpnService.java`, `proguard-rules.pro`, `scripts\traffic-proof.ps1`; пересобраны native libraries для arm64-v8a и x86_64.
+
+Дата и время - 2026-08-06 02:24:05 +10:00
+
+Проверка - Rust tests прошли 8/8; `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug` прошёл; `powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1` прошёл. Logcat содержит несколько `Protected outbound socket fd=...`, затем `result=200 body=zapret-proof`; после stop сервис и TUN отсутствуют.
+
+Артефакт - `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`, 3,065,295 bytes, SHA-256 `7279D03170BFC3C4491B8FED6EABEA042F6F7190DF6DFDAF94DAA9B2DB9CED42`.
+
+## 2026-08-06 - Physical Android runtime smoke
+
+Проблема - рабочий APK и полный TUN-to-SOCKS-to-Rust путь были подтверждены только на эмуляторе; не было воспроизводимой проверки arm64-библиотек, foreground service, TUN и native socket protection на реальном Android-устройстве.
+
+Причина - физический Pixel 8a был подключён через network ADB, но находился на защищённом lock screen; обычный background foreground-service start на Android 17 отклонялся системой.
+
+Решение - добавить ограниченный smoke-script, который сохраняет данные приложения при переустановке, проверяет уже выданный `ACTIVATE_VPN`, временно разрешает запуск через `deviceidle tempwhitelist`, стартует сервис от UID приложения, собирает runtime evidence и всегда выполняет graceful stop с проверкой cleanup.
+
+Что сделано - добавлен `scripts\physical-smoke.ps1`; обновлены `README.md`, `TASKS.md`, `MEMORY.md`, `docs\ARCHITECTURE.md` и `docs\WORK_REPORT_2026-08-06.md`; на Pixel 8a установлена текущая arm64-сборка и собраны локальные артефакты в `build\test-artifacts\physical-device`.
+
+Дата и время - 2026-08-06 02:32:52 +10:00
+
+Проверка - PowerShell parser вернул `PARSE_OK`; `powershell -ExecutionPolicy Bypass -File scripts\physical-smoke.ps1` завершился сообщением `Physical smoke passed on Pixel 8a (arm64-v8a, Android 17)`; `physical-report.json` содержит `foreground_service=true`, `tun_address=10.71.0.1/24`, `socket_protection_observed=true`, `cleanup_passed=true`, `passed=true`; отдельная post-check подтвердила отсутствие сервиса и активного `tun0`.
+
+Ограничение - на устройстве уже было выдано VPN-разрешение, а экран был заблокирован, поэтому fresh-install consent dialog на физическом устройстве не проверялся; этот диалог ранее покрыт emulator/Maestro smoke.
+
+Артефакт - `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`, 3,065,295 bytes, SHA-256 `7279D03170BFC3C4491B8FED6EABEA042F6F7190DF6DFDAF94DAA9B2DB9CED42`.

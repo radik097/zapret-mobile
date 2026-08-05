@@ -9,6 +9,7 @@ Current rules:
 - No HTTPS MITM, no user CA installation, and no TLS decryption.
 - Imported profiles must be treated as untrusted data.
 - Native parsers must bound all lengths and reject truncated or malformed data.
+- Native outbound TCP/UDP sockets must pass `VpnService.protect(fd)` before connect/send; protection failure is fail-closed for that relay operation.
 - Release builds must not contain debug management interfaces.
 
 Threat model:
@@ -19,4 +20,3 @@ Threat model:
 - Local SOCKS abuse: bind to loopback only and add authentication or per-process controls if Android exposes the port to other apps on a target device.
 - Log leakage: do not persist full user URLs, request bodies, TLS payloads, or DNS contents.
 - Native hang: service stop must terminate listeners and close TUN resources.
-

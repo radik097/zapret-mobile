@@ -1,12 +1,12 @@
 # Full Work Report - Zapret Mobile
 
-Timestamp: 2026-08-06 01:34:05 +10:00
+Timestamp: 2026-08-06 02:32:52 +10:00
 
 ## Executive Summary
 
-The `D:\Android\VPN_app` folder was turned from a specification/instruction workspace into a buildable, locally testable Android VPN project. The app now builds a debug APK, starts a rootless Android `VpnService`, creates a TUN interface, bridges TUN traffic into a local SOCKS5 engine, and has automated emulator proofs for lifecycle, TCP traffic, deterministic HTTP split behavior, and emulator-level PCAP capture.
+The `D:\Android\VPN_app` folder was turned from a specification/instruction workspace into a buildable, locally testable Android VPN project. The app now builds a debug APK, starts a rootless Android `VpnService`, creates a TUN interface, bridges TUN traffic into a local SOCKS5 engine, and has automated proofs for lifecycle, TCP traffic, deterministic HTTP split behavior, emulator-level PCAP capture, native socket protection, and physical Android runtime.
 
-No remote push or PR was performed. The repository had no `.git` directory at handoff time, so the requested local commit is created as a new local Git repository commit.
+No remote push or PR was performed. The verified changes and this report are recorded only in the local Git repository.
 
 ## Implemented Application
 
@@ -19,6 +19,8 @@ No remote push or PR was performed. The repository had no `.git` directory at ha
 - Implemented bounded TLS ClientHello/SNI parser skeleton and split point calculation.
 - Implemented minimal SOCKS5 UDP ASSOCIATE relay for DNS/UDP datagrams.
 - Integrated `hev-socks5-tunnel` as the native Android TUN-to-SOCKS bridge.
+- Added persistent all-app/selected-app routing, three strategy profiles, and a QUIC/UDP 443 blocking policy.
+- Added fail-closed `VpnService.protect(fd)` callbacks for Rust TCP and UDP upstream sockets.
 - Packaged both `libzapret_engine.so` and `libhev-socks5-tunnel.so` for `arm64-v8a` and `x86_64`.
 
 ## Local Tooling Installed / Used
@@ -47,6 +49,7 @@ No remote push or PR was performed. The repository had no `.git` directory at ha
 - Added `tools/dpi_http_simulator.py` to simulate a local HTTP DPI rule against `Host: blocked.example`.
 - Added `scripts/dpi-proof.ps1` to prove split behavior through the live VPN path.
 - Added `scripts/dpi-proof-pcap.ps1` to restart the AVD with Android Emulator `-tcpdump` and save a real `.pcap`.
+- Added `scripts/physical-smoke.ps1` for repeatable physical-device foreground-service, TUN, socket-protection, non-crash, and cleanup verification.
 
 ## Verified Runtime Evidence
 
@@ -58,11 +61,15 @@ No remote push or PR was performed. The repository had no `.git` directory at ha
 - DPI first chunk: `GET /probe HTTP/1.1\r\nHost: blocked`.
 - DPI full request: `Host: blocked.example`.
 - PCAP artifact: `D:\Android\VPN_app\build\test-artifacts\dpi-proof-pcap\emulator-network.pcap`.
+- Physical device: Pixel 8a, `arm64-v8a`, Android 17; foreground service and `tun0` at `10.71.0.1/24` observed.
+- Physical socket protection: multiple `Protected outbound socket fd=` entries with no Zapret Mobile fatal exception.
+- Physical cleanup: service and Zapret TUN absent after graceful stop; `physical-report.json` records `passed=true` and `cleanup_passed=true`.
 
 ## Current APK Artifacts
 
 - Main APK: `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`
-- Last recorded main APK SHA-256: `CC6D669930058314612A12685A096790D8E6F164C12E0DEBAAEE3F01C3F5D4C8`
+- Main APK size: 3,065,295 bytes
+- Last recorded main APK SHA-256: `7279D03170BFC3C4491B8FED6EABEA042F6F7190DF6DFDAF94DAA9B2DB9CED42`
 - Test-client APK: `D:\Android\VPN_app\test-client\build\outputs\apk\debug\test-client-debug.apk`
 - Last recorded test-client APK SHA-256: `41FB8A451B25CFD52577F701BAFAFBF745B0D5BB5F189371FB89679BBA882EFE`
 
@@ -74,10 +81,10 @@ An attempted profile/settings UI and JNI strategy flag change was tested and rej
 
 - App selection UI was implemented after the original report; see the post-report update below.
 - Compatible, Balanced, and Aggressive profiles were implemented after the original report; Automatic/Custom profiles and advanced aggressive actions remain incomplete.
-- Production Rust socket protection callback is not implemented; current loop avoidance uses `addDisallowedApplication(getPackageName())`.
+- Production Rust socket protection was implemented after the original report; package routing remains a fallback.
 - HAR/mitmproxy or HTTP Toolkit export is not implemented.
 - QUIC/UDP443 policy was implemented after the original report; see the post-report updates below.
-- Physical device verification has not been performed; one physical/network ADB device was visible, but this work did not install or test on it.
+- Physical runtime was verified with previously granted VPN consent. Because the device was locked, a fresh-install consent dialog was not exercised there; that consent flow is covered by emulator automation.
 - This is a local debug APK and local proof harness, not a released production package.
 
 ## Final Verified Commands Before Commit
@@ -89,6 +96,7 @@ python -m py_compile tools\dpi_http_simulator.py
 powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1
 powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1
 powershell -ExecutionPolicy Bypass -File scripts\dpi-proof-pcap.ps1
+powershell -ExecutionPolicy Bypass -File scripts\physical-smoke.ps1
 ```
 
 ## Post-report update: selected-app routing
@@ -102,3 +110,11 @@ A persistent `Block QUIC (UDP/443)` switch and Rust relay policy were added. The
 ## Post-report update: native strategy profiles
 
 Persistent Compatible, Balanced, and Aggressive profiles were added to the UI and native engine. `scripts\dpi-proof.ps1 -AggressiveProfile` verified UI persistence, JNI configuration, and a distinct early split: the aggressive first chunk ends at `Host: b`, while Balanced ends at `Host: blocked`. Rust tests pass 8/8. The updated debug APK SHA-256 is `4CAA7B59DEB25C80560AFDBDF8699ED27DE6205376939809E260A1F00C85083C`.
+
+## Post-report update: native socket protection
+
+Rust TCP sockets are now created before connect and passed through `VpnService.protect(fd)` via a JNI JavaVM/GlobalRef callback; UDP upstream sockets are protected before send. Protection failure aborts that relay operation, while package-level routing remains a fallback. The emulator traffic proof passed with protected-fd log evidence followed by HTTP 200. The updated debug APK SHA-256 is `7279D03170BFC3C4491B8FED6EABEA042F6F7190DF6DFDAF94DAA9B2DB9CED42`.
+
+## Post-report update: physical Android runtime
+
+`scripts\physical-smoke.ps1` passed on a Pixel 8a (`arm64-v8a`, Android 17) connected through network ADB. It reinstalled the current APK while preserving data, confirmed existing VPN consent, started `ZapretVpnService`, verified foreground state, `tun0` at `10.71.0.1/24`, protected native socket logs, and absence of an app crash, then stopped the service and confirmed complete TUN cleanup. Evidence is stored under `build\test-artifacts\physical-device`.

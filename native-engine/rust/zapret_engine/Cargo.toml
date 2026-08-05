@@ -8,4 +8,5 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-
+jni = "0.21.1"
+socket2 = "0.5.10"

@@ -1,13 +1,13 @@
 # MEMORY: Project State
 
-Updated: 2026-08-06 01:34:05 +10:00
+Updated: 2026-08-06 02:32:52 +10:00
 
 ## Current Project
 
 - Name: Zapret Mobile.
 - Workspace: D:\Android\VPN_app.
 - Current structure: Rust-first Android project skeleton exists and builds a debug APK.
-- Git status: .git is not present in `D:\Android\VPN_app`.
+- Git status: a local Git repository exists in `D:\Android\VPN_app`; no remote push or PR is allowed without a later explicit request and successful local verification.
 - User direction: create multiple files so an LLM can navigate instructions, memory, tasks, workflow, role, and BLACKBOX without rereading one large file.
 - Latest user direction: autonomously develop the Android app from the local files with full control to install needed tooling, without asking clarification.
 
@@ -38,8 +38,8 @@ Updated: 2026-08-06 01:34:05 +10:00
 ## Known Constraints
 
 - Current debug APK path: `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`.
-- Last clean debug APK SHA-256: `4CAA7B59DEB25C80560AFDBDF8699ED27DE6205376939809E260A1F00C85083C`.
-- Last clean debug APK size: 2,433,023 bytes.
+- Last clean debug APK SHA-256: `7279D03170BFC3C4491B8FED6EABEA042F6F7190DF6DFDAF94DAA9B2DB9CED42`.
+- Last clean debug APK size: 3,065,295 bytes.
 - Verified commands: `cargo test --manifest-path native-engine/rust/zapret_engine/Cargo.toml`, `.\gradlew.bat test`, `.\gradlew.bat lintDebug`, `.\gradlew.bat assembleDebug`, `.\gradlew.bat clean test assembleDebug`, `scripts\build-debug.ps1`, `powershell -ExecutionPolicy Bypass -File scripts\maestro-smoke.ps1`.
 - `lintDebug` passed with 0 errors and 2 warnings about API 37 availability; `sdkmanager` could not install `platforms;android-37` at this time.
 - Initial `adb devices` check found no connected devices or running emulators before the emulator setup below.
@@ -49,22 +49,23 @@ Updated: 2026-08-06 01:34:05 +10:00
 - `scripts\maestro-smoke.ps1` passed on `emulator-5554`: start flow JUnit and stop flow JUnit both have `failures="0"`; active artifacts show foreground `ZapretVpnService`, `tun0`, `10.71.0.1`, and `VPN:dev.zapret.mobile`; stopped artifacts show no service and no `tun0/10.71.0.1`.
 - `scripts\traffic-proof.ps1` passed on `emulator-5554`: it installs separate `dev.zapret.testclient`, starts a host Python HTTP server at `127.0.0.1:18080`, activates VPN, and verifies `ZAPRET_TEST_CLIENT result=200 body=zapret-proof` for `http://10.0.2.2:18080/probe`; host log records `GET /probe HTTP/1.1` 200.
 - `scripts\traffic-proof.ps1 -SelectedAppsOnly` passed on `emulator-5554`: Maestro enabled selected-app routing, chose `dev.zapret.testclient`, verified the selection after an Activity restart, and the same client received `result=200 body=zapret-proof`; SharedPreferences contains `selected_only=true`, and the service logged `Routing 1 selected app(s)`.
-- A persistent `Block QUIC (UDP/443)` policy is enabled by default and passed to Rust through `NativeZapretEngine.configure(int, boolean)`. Rust unit tests include the UDP/443 decision; the emulator DPI proof passed with service log `QUIC/UDP 443 policy: blocked`.
-- Persistent Compatible, Balanced, and Aggressive profiles are selectable in the UI and passed to Rust through `NativeZapretEngine.configure(int, boolean)`. Rust tests pass 8/8; `scripts\dpi-proof.ps1 -AggressiveProfile` passed with persisted `strategy_profile=2`, service log `Strategy profile: aggressive`, and first chunk ending at `Host: b` instead of Balanced's `Host: blocked`.
+- A persistent `Block QUIC (UDP/443)` policy is enabled by default and passed to Rust through `NativeZapretEngine.configure(ZapretVpnService, int, boolean)`. Rust unit tests include the UDP/443 decision; the emulator DPI proof passed with service log `QUIC/UDP 443 policy: blocked`.
+- Persistent Compatible, Balanced, and Aggressive profiles are selectable in the UI and passed to Rust through `NativeZapretEngine.configure(ZapretVpnService, int, boolean)`. Rust tests pass 8/8; `scripts\dpi-proof.ps1 -AggressiveProfile` passed with persisted `strategy_profile=2`, service log `Strategy profile: aggressive`, and first chunk ending at `Host: b` instead of Balanced's `Host: blocked`.
+- Rust outbound TCP and UDP sockets now use `VpnService.protect(fd)` through a stored JavaVM/GlobalRef callback. `scripts\traffic-proof.ps1` requires protection log evidence and passed with multiple protected fd entries followed by `result=200 body=zapret-proof`.
 - Test-client debug APK path: `D:\Android\VPN_app\test-client\build\outputs\apk\debug\test-client-debug.apk`.
 - Last test-client debug APK SHA-256: `41FB8A451B25CFD52577F701BAFAFBF745B0D5BB5F189371FB89679BBA882EFE`.
 - Last test-client debug APK size: 879,886 bytes.
 - APK currently packages both `libzapret_engine.so` and `libhev-socks5-tunnel.so` for `arm64-v8a` and `x86_64`.
-- ADB also saw a physical/network device id `adb-53271JEKB00683-G83QXW._adb-tls-connect._tcp`, but this run did not install or test on that device.
+- Physical/network ADB device `adb-53271JEKB00683-G83QXW._adb-tls-connect._tcp` is a Pixel 8a (`arm64-v8a`, Android 17). `scripts\physical-smoke.ps1` passed with the current APK: existing `ACTIVATE_VPN` consent was confirmed, foreground `ZapretVpnService` and `tun0` at `10.71.0.1/24` were observed, protected outbound socket logs were captured, and cleanup removed both service and TUN.
 - `scripts\dpi-proof.ps1` passed on `emulator-5554`: it installs the app and `dev.zapret.testclient`, activates VPN through Maestro, starts a local HTTP DPI simulator at `127.0.0.1:18081`, sends raw HTTP with `Host: blocked.example`, and verifies `ZAPRET_TEST_CLIENT raw_result=200 body=dpi-split-proof`.
 - DPI proof artifact path: `D:\Android\VPN_app\build\test-artifacts\dpi-proof\dpi-report.json`; last report records `decision=allowed_split`, `passed=true`, `chunk_count=2`, first chunk `GET /probe HTTP/1.1\r\nHost: blocked`, and full request containing `Host: blocked.example`.
 - `scripts\dpi-proof-pcap.ps1` passed: it restarts `zapret_api36_x86_64` with Android Emulator `-tcpdump`, runs `scripts\dpi-proof.ps1`, stops the emulator to flush the capture, and writes `D:\Android\VPN_app\build\test-artifacts\dpi-proof-pcap\emulator-network.pcap` (30,007 bytes, classic PCAP magic `D4 C3 B2 A1`).
-- Latest verified commands: `cargo test --manifest-path native-engine/rust/zapret_engine/Cargo.toml`, `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug`, `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1`, `powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1`, and `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof-pcap.ps1`.
-- After the PCAP proof, the emulator is intentionally stopped; `adb devices` showed only physical/network device `adb-53271JEKB00683-G83QXW._adb-tls-connect._tcp`, and this run did not install/test on that physical device.
+- Latest verified commands: `cargo test --manifest-path native-engine/rust/zapret_engine/Cargo.toml`, `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug`, `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1`, `powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1`, `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof-pcap.ps1`, and `powershell -ExecutionPolicy Bypass -File scripts\physical-smoke.ps1`.
+- Physical proof artifacts are under `D:\Android\VPN_app\build\test-artifacts\physical-device`; `physical-report.json` records `passed=true`, `cleanup_passed=true`, and APK SHA-256 `7279D03170BFC3C4491B8FED6EABEA042F6F7190DF6DFDAF94DAA9B2DB9CED42`. The device was locked and already had VPN consent, so a fresh consent dialog was not exercised on that device.
 - `tools\dpi_http_simulator.py` was hardened to skip empty/no-data TCP connections before the real raw HTTP request; this fixed a simulator-only race where the first accepted connection could starve `scripts\dpi-proof.ps1`.
 - An attempted persisted profile/JNI strategy-flags UI change compiled but failed runtime `scripts\dpi-proof.ps1`; it was rolled back and should not be treated as implemented.
 - Full local work report path: `D:\Android\VPN_app\docs\WORK_REPORT_2026-08-06.md`.
-- The project is not MVP-complete: deterministic TCP/IPv4 host proof, selected-app routing, persistent basic strategy profiles, UDP/443 blocking, deterministic HTTP DPI split proof, and emulator PCAP capture are integrated, but HAR/mitmproxy capture, Rust socket protection callback, Automatic/Custom profile expansion, and physical-device testing are still missing.
+- The project is not MVP-complete: deterministic TCP/IPv4 host proof, selected-app routing, persistent basic strategy profiles, UDP/443 blocking, explicit Rust socket protection, deterministic HTTP DPI split proof, emulator PCAP capture, and physical-device runtime are integrated, but HAR/mitmproxy capture, Automatic/Custom profile expansion, and robust TLS/HTTP parser coverage are still missing.
 
 ## Next Agent Startup
 

@@ -9,6 +9,8 @@ This file records components currently used in the local project.
 | Gradle | Apache-2.0 | https://gradle.org/releases/ | Build wrapper/distribution |
 | Rust toolchain | MIT OR Apache-2.0 | https://www.rust-lang.org/ | Native engine build |
 | cargo-ndk | MIT OR Apache-2.0 | https://github.com/bbqsrc/cargo-ndk | Rust Android build helper |
+| jni 0.21.1 | MIT OR Apache-2.0 | https://github.com/jni-rs/jni-rs | Safe JavaVM attachment and VpnService global reference from Rust |
+| socket2 0.5.10 | MIT OR Apache-2.0 | https://github.com/rust-lang/socket2-rs | Create Android TCP sockets before connect so their fd can be protected |
 | Maestro CLI | Apache-2.0 | https://github.com/mobile-dev-inc/maestro | Local Android UI automation and JUnit smoke reports |
 | hev-socks5-tunnel | MIT | https://github.com/heiher/hev-socks5-tunnel | Packaged Android TUN-to-SOCKS native bridge |
 | hev-socks5-core | MIT | https://github.com/heiher/hev-socks5-core | Vendored submodule used by `hev-socks5-tunnel` |

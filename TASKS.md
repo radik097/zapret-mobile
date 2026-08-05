@@ -1,6 +1,6 @@
 # TASKS: Active Queue
 
-Updated: 2026-08-06 02:11:18 +10:00
+Updated: 2026-08-06 02:32:52 +10:00
 
 ## Current Task
 
@@ -23,13 +23,10 @@ Completion criteria:
 
 ## Backlog
 
-- TASK-008: Replace current package-level VPN loop avoidance with explicit socket protection callback/path for outbound Rust sockets.
 - TASK-021: Add Automatic fallback and Custom strategy profiles; extend Aggressive with multi-split and TLS record fragmentation.
 - TASK-011: Add robust TLS ClientHello positive fixtures, SNI positions, ALPN parsing, and malformed packet coverage.
 - TASK-012: Add HTTP parser coverage for methods, case-insensitive Host, header limits, and malformed input.
-- TASK-014: Run on physical device and verify permission request, TUN creation, start/stop, and non-crash behavior.
 - TASK-004: Research the referenced third-party repositories and licenses before reusing components.
-- TASK-006: Do not claim MVP readiness until TUN traffic is really relayed and runtime/device behavior is verified.
 - TASK-017: Add HTTP Toolkit/mitmproxy HAR export to the local report artifacts.
 
 ## Done
@@ -52,3 +49,6 @@ Completion criteria:
 - TASK-010: Added persistent app routing settings and UI. Users can route all apps or select launcher apps; `ZapretVpnService` applies the saved mode with `addDisallowedApplication` or `addAllowedApplication`. `scripts\traffic-proof.ps1 -SelectedAppsOnly` verified persisted selection and TCP traffic through the VPN on the emulator.
 - TASK-013: Added a persistent `Block QUIC (UDP/443)` switch, separate JNI engine configuration, and a Rust UDP relay policy that drops destination port 443 when enabled. The policy is enabled by default, covered by Rust unit tests, and the emulator DPI proof confirmed the configured native engine still starts and relays TCP correctly.
 - TASK-009: Added persistent Compatible, Balanced, and Aggressive profiles with a Spinner UI and native behavior. Balanced preserves midpoint split plus 12 ms delay, Compatible uses the same single split without delay, and Aggressive splits after the first Host/SNI character plus 35 ms delay. `scripts\dpi-proof.ps1 -AggressiveProfile` verified persistence and a distinct early split on the emulator.
+- TASK-008: Added production per-socket protection for Rust outbound TCP and UDP. JNI stores a `VpnService` global reference, TCP sockets call `protectSocket(fd)` before `connect`, UDP upstream sockets call it before `send_to`, and failures abort the connection. Traffic proof requires both `Protected outbound socket fd=` and HTTP 200 evidence.
+- TASK-006: Verified real TUN traffic relay on the emulator and runtime behavior on a physical Android device. Remaining protocol/profile/reporting work is still tracked separately, so the project remains an MVP in progress.
+- TASK-014: Added and passed `scripts\physical-smoke.ps1` on a Pixel 8a (`arm64-v8a`, Android 17). It preserved app data during install, confirmed existing VPN consent, started the foreground service, verified `tun0` at `10.71.0.1/24`, observed protected native sockets without a crash, and verified stop cleanup.

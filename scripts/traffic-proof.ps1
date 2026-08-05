@@ -194,6 +194,9 @@ try {
     if (-not $matched) {
         throw "Traffic proof did not observe expected test-client success for $probeUrl"
     }
+    if (-not ($logcat -match "ZapretVpnService.*Protected outbound socket fd=")) {
+        throw "Traffic proof did not observe VpnService.protect for the Rust outbound socket"
+    }
     if ($SelectedAppsOnly -and -not ($logcat -match "ZapretVpnService.*Routing 1 selected app\(s\)")) {
         throw "VPN service did not report the selected-app routing policy"
     }

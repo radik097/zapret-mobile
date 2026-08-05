@@ -70,7 +70,7 @@ public final class ZapretVpnService extends android.net.VpnService {
         try {
             StrategyProfile profile = EngineSettings.getStrategyProfile(this);
             boolean blockQuic = EngineSettings.isQuicBlocked(this);
-            int configureResult = NativeZapretEngine.configure(profile.getNativeId(), blockQuic);
+            int configureResult = NativeZapretEngine.configure(this, profile.getNativeId(), blockQuic);
             if (configureResult != 0) {
                 throw new IllegalStateException("Native engine configuration failed: " + configureResult);
             }
@@ -98,6 +98,16 @@ public final class ZapretVpnService extends android.net.VpnService {
             Log.e(TAG, "Failed to start VPN", error);
             stopVpn();
         }
+    }
+
+    public boolean protectSocket(int socketFd) {
+        boolean protectedSocket = protect(socketFd);
+        if (protectedSocket) {
+            Log.i(TAG, "Protected outbound socket fd=" + socketFd);
+        } else {
+            Log.e(TAG, "Failed to protect outbound socket fd=" + socketFd);
+        }
+        return protectedSocket;
     }
 
     private void configureAppRouting(Builder builder) {

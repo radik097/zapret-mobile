@@ -1,6 +1,15 @@
+use jni::JNIEnv as SafeJniEnv;
+use jni::JavaVM;
+use jni::objects::{GlobalRef, JClass as SafeJClass, JObject, JValue};
+#[cfg(target_os = "android")]
+use socket2::{Domain, Protocol, Socket, Type};
 use std::ffi::c_void;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
+#[cfg(target_os = "android")]
+use std::net::ToSocketAddrs;
+#[cfg(target_os = "android")]
+use std::os::fd::AsRawFd;
 use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -16,6 +25,12 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 static BLOCK_UDP_443: AtomicBool = AtomicBool::new(true);
 static STRATEGY_PROFILE: AtomicU8 = AtomicU8::new(PROFILE_BALANCED);
 static SERVER: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
+static SOCKET_PROTECTOR: OnceLock<Mutex<Option<SocketProtector>>> = OnceLock::new();
+
+struct SocketProtector {
+    vm: JavaVM,
+    service: GlobalRef,
+}
 
 #[repr(C)]
 pub struct JNIEnv {
@@ -60,14 +75,29 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_start(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configure(
-    _env: *mut JNIEnv,
-    _class: JClass,
+    env: SafeJniEnv<'_>,
+    _class: SafeJClass<'_>,
+    vpn_service: JObject<'_>,
     profile_id: i32,
     block_quic: u8,
 ) -> i32 {
     if !(PROFILE_COMPATIBLE as i32..=PROFILE_AGGRESSIVE as i32).contains(&profile_id) {
         return -1;
     }
+    let vm = match env.get_java_vm() {
+        Ok(vm) => vm,
+        Err(_) => return -2,
+    };
+    let service = match env.new_global_ref(vpn_service) {
+        Ok(service) => service,
+        Err(_) => return -3,
+    };
+    let protector = SOCKET_PROTECTOR.get_or_init(|| Mutex::new(None));
+    let Ok(mut slot) = protector.lock() else {
+        return -4;
+    };
+    *slot = Some(SocketProtector { vm, service });
+
     STRATEGY_PROFILE.store(profile_id as u8, Ordering::SeqCst);
     BLOCK_UDP_443.store(block_quic != 0, Ordering::SeqCst);
     0
@@ -276,6 +306,67 @@ fn jni_new_string(env: *mut JNIEnv, value: &str) -> *mut c_void {
     }
 }
 
+fn protect_socket(socket_fd: i32) -> io::Result<()> {
+    let cell = SOCKET_PROTECTOR.get().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotConnected, "VPN socket protector is not configured")
+    })?;
+    let protector = cell
+        .lock()
+        .map_err(|_| io::Error::other("VPN socket protector lock is poisoned"))?;
+    let protector = protector.as_ref().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotConnected, "VPN socket protector is unavailable")
+    })?;
+    let mut env = protector
+        .vm
+        .attach_current_thread()
+        .map_err(|error| io::Error::other(format!("attach JNI thread: {error}")))?;
+    let protected = env
+        .call_method(
+            protector.service.as_obj(),
+            "protectSocket",
+            "(I)Z",
+            &[JValue::Int(socket_fd)],
+        )
+        .and_then(|value| value.z())
+        .map_err(|error| io::Error::other(format!("VpnService.protect JNI call: {error}")))?;
+    if protected {
+        Ok(())
+    } else {
+        Err(io::Error::other("VpnService rejected outbound socket protection"))
+    }
+}
+
+#[cfg(target_os = "android")]
+fn connect_target(target: &str) -> io::Result<TcpStream> {
+    let mut last_error = None;
+    for address in target.to_socket_addrs()? {
+        let socket = Socket::new(Domain::for_address(address), Type::STREAM, Some(Protocol::TCP))?;
+        protect_socket(socket.as_raw_fd())?;
+        match socket.connect(&address.into()) {
+            Ok(()) => return Ok(socket.into()),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        io::Error::new(io::ErrorKind::AddrNotAvailable, "SOCKS target resolved to no addresses")
+    }))
+}
+
+#[cfg(not(target_os = "android"))]
+fn connect_target(target: &str) -> io::Result<TcpStream> {
+    TcpStream::connect(target)
+}
+
+#[cfg(target_os = "android")]
+fn protect_udp_socket(socket: &UdpSocket) -> io::Result<()> {
+    protect_socket(socket.as_raw_fd())
+}
+
+#[cfg(not(target_os = "android"))]
+fn protect_udp_socket(_socket: &UdpSocket) -> io::Result<()> {
+    Ok(())
+}
+
 fn run_socks_server(port: u16) {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(listener) => listener,
@@ -323,7 +414,7 @@ fn handle_socks_client(mut client: TcpStream) -> std::io::Result<()> {
     match header[1] {
         0x01 => {
             let target = read_socks_target(&mut client, header[3])?;
-            let upstream = TcpStream::connect(target)?;
+            let upstream = connect_target(&target)?;
             upstream.set_nodelay(true)?;
             write_socks_success(&mut client, 0)?;
             relay_with_initial_strategy(client, upstream)
@@ -468,6 +559,7 @@ fn relay_udp_datagram(
     payload: Vec<u8>,
 ) -> std::io::Result<()> {
     let upstream = UdpSocket::bind(("0.0.0.0", 0))?;
+    protect_udp_socket(&upstream)?;
     upstream.set_read_timeout(Some(Duration::from_secs(5)))?;
     upstream.send_to(&payload, target)?;
 
