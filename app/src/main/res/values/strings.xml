@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Zapret Mobile</string>
+    <string name="vpn_session">Zapret Mobile</string>
+    <string name="notification_channel">Zapret Mobile VPN</string>
+    <string name="notification_title">Zapret Mobile is running</string>
+    <string name="notification_text">Local VpnService and Rust DPI engine are active.</string>
+    <string name="subtitle">Rootless local VpnService with a Rust DPI engine. No remote VPN server, no IP change, no TLS MITM.</string>
+    <string name="start_vpn">Start VPN</string>
+    <string name="stop_vpn">Stop VPN</string>
+    <string name="diagnostics">Engine: %1$s\nSOCKS: 127.0.0.1:1080\nTraffic mode: system-wide IPv4 MVP</string>
+    <string name="status_format">Status: %1$s</string>
+    <string name="state_stopped">Stopped</string>
+    <string name="state_preparing">Preparing</string>
+    <string name="state_starting">Starting</string>
+    <string name="state_stopping">Stopping</string>
+    <string name="state_permission_denied">VPN permission denied</string>
+</resources>

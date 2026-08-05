@@ -1,0 +1,15 @@
+/.gradle/
+/build/
+/app/build/
+/test-client/build/
+/native-engine/rust/zapret_engine/target/
+/tools/__pycache__/
+*.pyc
+*.pyo
+*.log
+*.tmp
+*.keystore
+*.jks
+/local.properties
+/keystore.properties
+/research/

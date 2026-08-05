@@ -1,0 +1,15 @@
+appId: dev.zapret.mobile
+name: Zapret Mobile VPN smoke
+---
+- launchApp
+- assertVisible: "Zapret Mobile"
+- assertVisible: "START VPN"
+- assertVisible: "STOP VPN"
+- assertVisible: "Engine:.*"
+- tapOn: "START VPN"
+- tapOn:
+    text: "OK"
+    optional: true
+- extendedWaitUntil:
+    visible: "Status: Starting"
+    timeout: 10000

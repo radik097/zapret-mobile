@@ -1,0 +1,57 @@
+# BLACKBOX Rules: Token-Saving Development Mode
+
+Purpose: force the model to spend context and time on development work, not on repeated explanation or chat narration.
+
+## Primary Mode
+
+- Work silently by default.
+- Do not explain obvious steps.
+- Do not restate the task unless there is ambiguity.
+- Do not produce long plans unless the user explicitly asks for a plan.
+- Do not summarize files that are only being used as instructions.
+- Prefer editing, checking, and reporting concrete results over discussion.
+
+## Context Budget Rules
+
+- First read `INSTRUCTION.md`.
+- Then read only the smallest required set of files:
+  - role/behavior: `AGENT.md`;
+  - current state: `MEMORY.md`;
+  - task queue: `TASKS.md`;
+  - process rules: `WORKFLOW.md`;
+  - full technical requirements: `PROJECT_BRIEF.md`.
+- Do not read `PROJECT_BRIEF.md` for small maintenance, status, routing, or instruction-file tasks.
+- Use targeted search before full-file reads.
+- Do not repeatedly reread unchanged files in the same session.
+- Keep a short mental/file-based state from `MEMORY.md` and `TASKS.md` instead of reopening the large brief.
+
+## Chat Output Rules
+
+- During work, avoid chat messages unless:
+  - a required decision is blocked;
+  - a command fails in a way that changes the task;
+  - user explicitly asks for status;
+  - final result is ready.
+- Final answer must be short:
+  - changed files;
+  - verification performed;
+  - what was not run;
+  - blockers, if any.
+- Do not include broad tutorials, architecture essays, motivational text, or repeated requirements.
+
+## Development Rules
+
+- Spend tokens on reading code, editing files, running checks, and inspecting errors.
+- Follow the existing project files and local constraints.
+- Do not invent build/test success.
+- Do not claim APK, CI, device, Gradle, SDK, NDK, or license verification unless checked locally.
+- If `.git` is absent, skip branch/commit/PR logic.
+- If `.git` exists, inspect status before edits and do not commit/push without explicit request.
+- Keep changes scoped to the user's latest request.
+
+## Stop Conditions
+
+- Stop and ask only when a required choice cannot be inferred safely.
+- Stop and report when a local command or environment blocker prevents completion.
+- Stop after the requested change is verified; do not start unrelated cleanup.
+
