@@ -38,8 +38,8 @@ Updated: 2026-08-06 01:34:05 +10:00
 ## Known Constraints
 
 - Current debug APK path: `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`.
-- Last clean debug APK SHA-256: `CC6D669930058314612A12685A096790D8E6F164C12E0DEBAAEE3F01C3F5D4C8`.
-- Last clean debug APK size: 2,432,359 bytes.
+- Last clean debug APK SHA-256: `4CAA7B59DEB25C80560AFDBDF8699ED27DE6205376939809E260A1F00C85083C`.
+- Last clean debug APK size: 2,433,023 bytes.
 - Verified commands: `cargo test --manifest-path native-engine/rust/zapret_engine/Cargo.toml`, `.\gradlew.bat test`, `.\gradlew.bat lintDebug`, `.\gradlew.bat assembleDebug`, `.\gradlew.bat clean test assembleDebug`, `scripts\build-debug.ps1`, `powershell -ExecutionPolicy Bypass -File scripts\maestro-smoke.ps1`.
 - `lintDebug` passed with 0 errors and 2 warnings about API 37 availability; `sdkmanager` could not install `platforms;android-37` at this time.
 - Initial `adb devices` check found no connected devices or running emulators before the emulator setup below.
@@ -48,6 +48,9 @@ Updated: 2026-08-06 01:34:05 +10:00
 - `scripts\emulator-smoke.ps1` passed on `emulator-5554`: install, launch, VPN permission path, `ZapretVpnService` foreground service, `tun0` with `10.71.0.1`, connectivity `VPN:dev.zapret.mobile`, and stop cleanup.
 - `scripts\maestro-smoke.ps1` passed on `emulator-5554`: start flow JUnit and stop flow JUnit both have `failures="0"`; active artifacts show foreground `ZapretVpnService`, `tun0`, `10.71.0.1`, and `VPN:dev.zapret.mobile`; stopped artifacts show no service and no `tun0/10.71.0.1`.
 - `scripts\traffic-proof.ps1` passed on `emulator-5554`: it installs separate `dev.zapret.testclient`, starts a host Python HTTP server at `127.0.0.1:18080`, activates VPN, and verifies `ZAPRET_TEST_CLIENT result=200 body=zapret-proof` for `http://10.0.2.2:18080/probe`; host log records `GET /probe HTTP/1.1` 200.
+- `scripts\traffic-proof.ps1 -SelectedAppsOnly` passed on `emulator-5554`: Maestro enabled selected-app routing, chose `dev.zapret.testclient`, verified the selection after an Activity restart, and the same client received `result=200 body=zapret-proof`; SharedPreferences contains `selected_only=true`, and the service logged `Routing 1 selected app(s)`.
+- A persistent `Block QUIC (UDP/443)` policy is enabled by default and passed to Rust through `NativeZapretEngine.configure(int, boolean)`. Rust unit tests include the UDP/443 decision; the emulator DPI proof passed with service log `QUIC/UDP 443 policy: blocked`.
+- Persistent Compatible, Balanced, and Aggressive profiles are selectable in the UI and passed to Rust through `NativeZapretEngine.configure(int, boolean)`. Rust tests pass 8/8; `scripts\dpi-proof.ps1 -AggressiveProfile` passed with persisted `strategy_profile=2`, service log `Strategy profile: aggressive`, and first chunk ending at `Host: b` instead of Balanced's `Host: blocked`.
 - Test-client debug APK path: `D:\Android\VPN_app\test-client\build\outputs\apk\debug\test-client-debug.apk`.
 - Last test-client debug APK SHA-256: `41FB8A451B25CFD52577F701BAFAFBF745B0D5BB5F189371FB89679BBA882EFE`.
 - Last test-client debug APK size: 879,886 bytes.
@@ -61,7 +64,7 @@ Updated: 2026-08-06 01:34:05 +10:00
 - `tools\dpi_http_simulator.py` was hardened to skip empty/no-data TCP connections before the real raw HTTP request; this fixed a simulator-only race where the first accepted connection could starve `scripts\dpi-proof.ps1`.
 - An attempted persisted profile/JNI strategy-flags UI change compiled but failed runtime `scripts\dpi-proof.ps1`; it was rolled back and should not be treated as implemented.
 - Full local work report path: `D:\Android\VPN_app\docs\WORK_REPORT_2026-08-06.md`.
-- The project is not MVP-complete: deterministic TCP/IPv4 host proof, deterministic HTTP DPI split proof, and emulator PCAP capture are integrated, but app selection, persistent strategy profiles, QUIC policy, HAR/mitmproxy capture, Rust socket protection callback, and physical-device testing are still missing.
+- The project is not MVP-complete: deterministic TCP/IPv4 host proof, selected-app routing, persistent basic strategy profiles, UDP/443 blocking, deterministic HTTP DPI split proof, and emulator PCAP capture are integrated, but HAR/mitmproxy capture, Rust socket protection callback, Automatic/Custom profile expansion, and physical-device testing are still missing.
 
 ## Next Agent Startup
 

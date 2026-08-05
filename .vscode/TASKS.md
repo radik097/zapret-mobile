@@ -145,3 +145,51 @@
 Проверка - `cargo test --manifest-path native-engine\rust\zapret_engine\Cargo.toml` прошёл 6/6; `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug` прошёл; `python -m py_compile tools\dpi_http_simulator.py` прошёл; `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1` прошёл; `powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1` прошёл.
 
 Ограничения - profile/settings UI, QUIC policy и HAR export остаются в backlog; app-code профильная правка не зафиксирована, потому что runtime proof её не подтвердил.
+
+## 2026-08-06 - Persistent selected-app routing
+
+Проблема - VPN маршрутизировал весь IPv4-трафик устройства и не позволял пользователю выбрать приложения, хотя выбор и сохранение приложений входят в критерии MVP.
+
+Причина - `MainActivity` не имела UI/хранилища allow-list, а `ZapretVpnService` всегда вызывал только `addDisallowedApplication` для собственного package.
+
+Решение - добавить persisted режим маршрутизации, диалог выбора launcher-приложений и применение сохранённого allow-list через `VpnService.Builder.addAllowedApplication`.
+
+Что сделано - добавлен `AppRoutingSettings.java`; обновлены `MainActivity.java`, `ZapretVpnService.java`, `AndroidManifest.xml`, `strings.xml`; добавлен Maestro flow `.maestro/zapret-app-routing.yaml`; `scripts\traffic-proof.ps1` получил параметр `-SelectedAppsOnly` и проверку SharedPreferences, service log и TCP proof.
+
+Дата и время - 2026-08-06 01:52:36 +10:00
+
+Проверка - `git diff --check` прошёл; `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug` прошёл; `powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1 -SelectedAppsOnly` прошёл. Maestro routing/start/stop JUnit содержат `failures="0"`; persisted XML содержит `selected_only=true` и `dev.zapret.testclient`; logcat содержит `Routing 1 selected app(s)` и `result=200 body=zapret-proof`.
+
+Артефакт - `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`, 2,432,359 bytes, SHA-256 `A6358B77CB104A99FE64EA27E177269AFAF47B6EBC985D609F8824A1118AA7C5`.
+
+## 2026-08-06 - Configurable QUIC/UDP 443 blocking
+
+Проблема - SOCKS5 UDP relay пропускал UDP/443 без управляемой политики, поэтому приложение не могло заставить QUIC-клиенты выполнить fallback на HTTPS/TCP.
+
+Причина - Android UI не сохранял QUIC-настройку, JNI не передавал конфигурацию движку, а Rust relay не проверял destination port UDP datagram.
+
+Решение - добавить включённый по умолчанию switch `Block QUIC (UDP/443)`, отдельный JNI `configure(boolean)` без изменения стабильной сигнатуры `start(int)` и drop-проверку порта 443 перед отправкой UDP upstream.
+
+Что сделано - добавлен `EngineSettings.java`; обновлены `MainActivity.java`, `NativeZapretEngine.java`, `ZapretVpnService.java`, `strings.xml`; Rust engine хранит policy в `AtomicBool`, извлекает destination port из SOCKS5 UDP header и отбрасывает UDP/443 при включённой настройке; пересобраны обе ABI-библиотеки.
+
+Дата и время - 2026-08-06 02:04:21 +10:00
+
+Проверка - `cargo test --manifest-path native-engine\rust\zapret_engine\Cargo.toml` прошёл 7/7; `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug` прошёл; `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1` прошёл. Logcat содержит `QUIC/UDP 443 policy: blocked` и `raw_result=200 body=dpi-split-proof`. `rustfmt` не запускался, потому что компонент `rustfmt` отсутствует в установленном Rust toolchain.
+
+Артефакт - `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`, 2,432,527 bytes, SHA-256 `5DF8DC1CF76EBAF9C204288480F78E4BACC08853719C16CE5A591FC32FDF8767`.
+
+## 2026-08-06 - Persistent native strategy profiles
+
+Проблема - движок всегда использовал одну hardcoded split-позицию и задержку, а пользователь не мог выбрать или сохранить профиль стратегии.
+
+Причина - отсутствовали модель профиля, persistent setting, UI selector и profile id в уже существующем JNI configure path.
+
+Решение - реализовать три профиля, соответствующие фактически поддерживаемым операциям: Compatible, Balanced и Aggressive; передавать profile id отдельным JNI configure и выбирать split-позицию/задержку в Rust.
+
+Что сделано - добавлен `StrategyProfile.java`; расширены `EngineSettings.java`, `MainActivity.java`, `NativeZapretEngine.java`, `ZapretVpnService.java`, `strings.xml`; Rust engine получил `AtomicU8` profile state и profile-aware initial strategy; добавлен `.maestro/zapret-profile-aggressive.yaml`; `scripts\dpi-proof.ps1` получил параметр `-AggressiveProfile` и отдельный каталог артефактов.
+
+Дата и время - 2026-08-06 02:11:18 +10:00
+
+Проверка - Rust unit-тесты прошли 8/8; `.\gradlew.bat test lintDebug assembleDebug :test-client:assembleDebug` прошёл; `powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1 -AggressiveProfile` прошёл. Persisted XML содержит `strategy_profile=2`; JUnit profile/start/stop имеют 0 failures; logcat содержит `Strategy profile: aggressive`; aggressive report делит после `Host: b`, тогда как balanced report делит после `Host: blocked`.
+
+Артефакт - `D:\Android\VPN_app\app\build\outputs\apk\debug\app-debug.apk`, 2,433,023 bytes, SHA-256 `4CAA7B59DEB25C80560AFDBDF8699ED27DE6205376939809E260A1F00C85083C`.

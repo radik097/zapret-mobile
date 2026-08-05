@@ -1,7 +1,8 @@
 param(
     [string]$AvdName = "zapret_api36_x86_64",
     [string]$Serial = "emulator-5554",
-    [int]$Port = 18080
+    [int]$Port = 18080,
+    [switch]$SelectedAppsOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +20,9 @@ $appApk = Join-Path $root "app\build\outputs\apk\debug\app-debug.apk"
 $clientApk = Join-Path $root "test-client\build\outputs\apk\debug\test-client-debug.apk"
 $startFlow = Join-Path $root ".maestro\zapret-smoke.yaml"
 $stopFlow = Join-Path $root ".maestro\zapret-stop.yaml"
-$artifactRoot = Join-Path $root "build\test-artifacts\traffic-proof"
+$routingFlow = Join-Path $root ".maestro\zapret-app-routing.yaml"
+$artifactName = if ($SelectedAppsOnly) { "traffic-proof-selected-apps" } else { "traffic-proof" }
+$artifactRoot = Join-Path $root "build\test-artifacts\$artifactName"
 $wwwRoot = Join-Path $artifactRoot "www"
 $serverLog = Join-Path $artifactRoot "host-http-server.log"
 $probeUrl = "http://10.0.2.2:$Port/probe"
@@ -145,6 +148,24 @@ try {
     Wait-DeviceReady -TargetSerial $Serial -TimeoutSeconds 180
     & $adb -s $Serial logcat -c
 
+    if ($SelectedAppsOnly) {
+        Invoke-MaestroFlow `
+            -TargetSerial $Serial `
+            -FlowPath $routingFlow `
+            -JunitPath (Join-Path $artifactRoot "maestro-routing-junit.xml") `
+            -OutputDir (Join-Path $artifactRoot "maestro-routing-output") `
+            -Name "Maestro selected-app routing flow"
+
+        $routingPreferences = & $adb -s $Serial shell run-as dev.zapret.mobile cat shared_prefs/app_routing.xml
+        $routingPreferences | Set-Content -LiteralPath (Join-Path $artifactRoot "app-routing.xml")
+        if (-not ($routingPreferences -match 'name="selected_only" value="true"')) {
+            throw "Selected-app routing mode was not persisted"
+        }
+        if (-not ($routingPreferences -match 'dev.zapret.testclient')) {
+            throw "Selected test-client package was not persisted"
+        }
+    }
+
     Invoke-MaestroFlow `
         -TargetSerial $Serial `
         -FlowPath $startFlow `
@@ -173,6 +194,9 @@ try {
     if (-not $matched) {
         throw "Traffic proof did not observe expected test-client success for $probeUrl"
     }
+    if ($SelectedAppsOnly -and -not ($logcat -match "ZapretVpnService.*Routing 1 selected app\(s\)")) {
+        throw "VPN service did not report the selected-app routing policy"
+    }
 
     Stop-ZapretVpn
     Start-Sleep -Seconds 3
@@ -187,7 +211,8 @@ try {
         throw "TUN address still present after traffic proof cleanup"
     }
 
-    Write-Host "Traffic proof passed for $probeUrl. Artifacts: $artifactRoot"
+    $routingMode = if ($SelectedAppsOnly) { "selected app" } else { "all apps" }
+    Write-Host "Traffic proof passed for $probeUrl in $routingMode mode. Artifacts: $artifactRoot"
 } finally {
     if ($server -ne $null -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force

@@ -2,14 +2,19 @@ use std::ffi::c_void;
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::os::raw::c_char;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 const ENGINE_VERSION: &str = "zapret-engine-rust/0.1.0";
 const MAX_INITIAL_BYTES: usize = 16 * 1024;
+const PROFILE_COMPATIBLE: u8 = 0;
+const PROFILE_BALANCED: u8 = 1;
+const PROFILE_AGGRESSIVE: u8 = 2;
 static RUNNING: AtomicBool = AtomicBool::new(false);
+static BLOCK_UDP_443: AtomicBool = AtomicBool::new(true);
+static STRATEGY_PROFILE: AtomicU8 = AtomicU8::new(PROFILE_BALANCED);
 static SERVER: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
 
 #[repr(C)]
@@ -51,6 +56,21 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_start(
         RUNNING.store(false, Ordering::SeqCst);
         -2
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configure(
+    _env: *mut JNIEnv,
+    _class: JClass,
+    profile_id: i32,
+    block_quic: u8,
+) -> i32 {
+    if !(PROFILE_COMPATIBLE as i32..=PROFILE_AGGRESSIVE as i32).contains(&profile_id) {
+        return -1;
+    }
+    STRATEGY_PROFILE.store(profile_id as u8, Ordering::SeqCst);
+    BLOCK_UDP_443.store(block_quic != 0, Ordering::SeqCst);
+    0
 }
 
 #[unsafe(no_mangle)]
@@ -377,9 +397,12 @@ fn handle_udp_associate(mut control: TcpStream, atyp: u8) -> std::io::Result<()>
 
         match udp.recv_from(&mut packet) {
             Ok((read, client_addr)) => {
-                let Ok((target, payload)) = parse_socks_udp_packet(&packet[..read]) else {
+                let Ok((target, target_port, payload)) = parse_socks_udp_packet(&packet[..read]) else {
                     continue;
                 };
+                if should_block_udp(target_port, BLOCK_UDP_443.load(Ordering::Relaxed)) {
+                    continue;
+                }
                 let Ok(reply_socket) = udp.try_clone() else {
                     continue;
                 };
@@ -398,12 +421,12 @@ fn handle_udp_associate(mut control: TcpStream, atyp: u8) -> std::io::Result<()>
     Ok(())
 }
 
-fn parse_socks_udp_packet(packet: &[u8]) -> std::io::Result<(String, &[u8])> {
+fn parse_socks_udp_packet(packet: &[u8]) -> std::io::Result<(String, u16, &[u8])> {
     if packet.len() < 4 || packet[0] != 0 || packet[1] != 0 || packet[2] != 0 {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid SOCKS UDP header"));
     }
     let mut pos = 4;
-    let target = match packet[3] {
+    let (target, target_port) = match packet[3] {
         0x01 => {
             if packet.len() < pos + 4 + 2 {
                 return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "truncated IPv4 UDP target"));
@@ -412,7 +435,7 @@ fn parse_socks_udp_packet(packet: &[u8]) -> std::io::Result<(String, &[u8])> {
             pos += 4;
             let port = u16::from_be_bytes([packet[pos], packet[pos + 1]]);
             pos += 2;
-            format!("{}.{}.{}.{}:{}", addr[0], addr[1], addr[2], addr[3], port)
+            (format!("{}.{}.{}.{}:{}", addr[0], addr[1], addr[2], addr[3], port), port)
         }
         0x03 => {
             if packet.len() < pos + 1 {
@@ -427,11 +450,15 @@ fn parse_socks_udp_packet(packet: &[u8]) -> std::io::Result<(String, &[u8])> {
             pos += len;
             let port = u16::from_be_bytes([packet[pos], packet[pos + 1]]);
             pos += 2;
-            format!("{host}:{port}")
+            (format!("{host}:{port}"), port)
         }
         _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported SOCKS UDP address type")),
     };
-    Ok((target, &packet[pos..]))
+    Ok((target, target_port, &packet[pos..]))
+}
+
+fn should_block_udp(target_port: u16, block_quic: bool) -> bool {
+    block_quic && target_port == 443
 }
 
 fn relay_udp_datagram(
@@ -475,9 +502,11 @@ fn relay_with_initial_strategy(mut client: TcpStream, mut upstream: TcpStream) -
     let read = client.read(&mut initial)?;
     if read > 0 {
         let packet = &initial[..read];
-        if let Some(split) = tls_sni_split_position(packet).or_else(|| http_host_split_position(packet)) {
+        if let Some((split, delay_ms)) = initial_strategy(packet, STRATEGY_PROFILE.load(Ordering::Relaxed)) {
             upstream.write_all(&packet[..split])?;
-            thread::sleep(Duration::from_millis(12));
+            if delay_ms > 0 {
+                thread::sleep(Duration::from_millis(delay_ms));
+            }
             upstream.write_all(&packet[split..])?;
         } else {
             upstream.write_all(packet)?;
@@ -496,7 +525,38 @@ fn relay_with_initial_strategy(mut client: TcpStream, mut upstream: TcpStream) -
     Ok(())
 }
 
+fn initial_strategy(packet: &[u8], profile: u8) -> Option<(usize, u64)> {
+    match profile {
+        PROFILE_COMPATIBLE => tls_sni_split_position(packet)
+            .or_else(|| http_host_split_position(packet))
+            .map(|split| (split, 0)),
+        PROFILE_AGGRESSIVE => tls_sni_start_split_position(packet)
+            .or_else(|| http_host_start_split_position(packet))
+            .map(|split| (split, 35)),
+        _ => tls_sni_split_position(packet)
+            .or_else(|| http_host_split_position(packet))
+            .map(|split| (split, 12)),
+    }
+}
+
 pub fn http_host_split_position(buf: &[u8]) -> Option<usize> {
+    let (value_start, line_end) = http_host_value_bounds(buf)?;
+    Some(value_start + ((line_end - value_start).max(1) / 2))
+}
+
+fn http_host_start_split_position(buf: &[u8]) -> Option<usize> {
+    let (value_start, line_end) = http_host_value_bounds(buf)?;
+    let mut host_start = value_start;
+    while host_start < line_end && matches!(buf[host_start], b' ' | b'\t') {
+        host_start += 1;
+    }
+    if host_start >= line_end {
+        return None;
+    }
+    Some(host_start + usize::from(line_end - host_start > 1))
+}
+
+fn http_host_value_bounds(buf: &[u8]) -> Option<(usize, usize)> {
     let header_end = buf.windows(4).position(|w| w == b"\r\n\r\n")?;
     if header_end > 8192 {
         return None;
@@ -510,12 +570,17 @@ pub fn http_host_split_position(buf: &[u8]) -> Option<usize> {
         .windows(2)
         .position(|w| w == b"\r\n")?
         + value_start;
-    Some(value_start + ((line_end - value_start).max(1) / 2))
+    Some((value_start, line_end))
 }
 
 pub fn tls_sni_split_position(buf: &[u8]) -> Option<usize> {
     let parsed = parse_tls_client_hello(buf).ok()?;
     parsed.sni_mid
+}
+
+fn tls_sni_start_split_position(buf: &[u8]) -> Option<usize> {
+    let parsed = parse_tls_client_hello(buf).ok()?;
+    Some(parsed.sni_start + usize::from(parsed.sni_end - parsed.sni_start > 1))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -658,6 +723,23 @@ mod tests {
     }
 
     #[test]
+    fn strategy_profiles_change_http_split_and_delay() {
+        let request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let (compatible_split, compatible_delay) =
+            initial_strategy(request, PROFILE_COMPATIBLE).expect("compatible strategy");
+        let (balanced_split, balanced_delay) =
+            initial_strategy(request, PROFILE_BALANCED).expect("balanced strategy");
+        let (aggressive_split, aggressive_delay) =
+            initial_strategy(request, PROFILE_AGGRESSIVE).expect("aggressive strategy");
+
+        assert_eq!(compatible_split, balanced_split);
+        assert_eq!(compatible_delay, 0);
+        assert_eq!(balanced_delay, 12);
+        assert!(aggressive_split < balanced_split);
+        assert_eq!(aggressive_delay, 35);
+    }
+
+    #[test]
     fn tls_parser_rejects_truncated_record() {
         assert_eq!(parse_tls_client_hello(&[0x16, 0x03, 0x01, 0x00, 0x20]), Err(ParseError::Truncated));
     }
@@ -671,9 +753,17 @@ mod tests {
     #[test]
     fn socks_udp_packet_parses_ipv4_target() {
         let packet = [0, 0, 0, 1, 1, 1, 1, 1, 0, 53, 0xAA, 0xBB];
-        let (target, payload) = parse_socks_udp_packet(&packet).expect("udp target");
+        let (target, port, payload) = parse_socks_udp_packet(&packet).expect("udp target");
         assert_eq!(target, "1.1.1.1:53");
+        assert_eq!(port, 53);
         assert_eq!(payload, &[0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn quic_policy_blocks_only_udp_443_when_enabled() {
+        assert!(should_block_udp(443, true));
+        assert!(!should_block_udp(443, false));
+        assert!(!should_block_udp(53, true));
     }
 
     #[test]

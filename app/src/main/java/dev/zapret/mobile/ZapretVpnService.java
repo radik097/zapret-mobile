@@ -68,6 +68,12 @@ public final class ZapretVpnService extends android.net.VpnService {
         startForeground(NOTIFICATION_ID, buildNotification());
 
         try {
+            StrategyProfile profile = EngineSettings.getStrategyProfile(this);
+            boolean blockQuic = EngineSettings.isQuicBlocked(this);
+            int configureResult = NativeZapretEngine.configure(profile.getNativeId(), blockQuic);
+            if (configureResult != 0) {
+                throw new IllegalStateException("Native engine configuration failed: " + configureResult);
+            }
             NativeZapretEngine.start(SOCKS_PORT);
             Builder builder = new Builder()
                 .setSession(getString(R.string.vpn_session))
@@ -76,7 +82,7 @@ public final class ZapretVpnService extends android.net.VpnService {
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
                 .allowFamily(OsConstants.AF_INET);
-            builder.addDisallowedApplication(getPackageName());
+            configureAppRouting(builder);
             tun = builder.establish();
             if (tun == null) {
                 throw new IllegalStateException("VpnService.Builder.establish returned null");
@@ -84,12 +90,41 @@ public final class ZapretVpnService extends android.net.VpnService {
             tunBridge = Tun2SocksBridge.start(this, tun, SOCKS_PORT);
             registerNetworkCallback();
             state.set(VpnState.RUNNING);
+            Log.i(TAG, "Strategy profile: " + profile.name().toLowerCase(java.util.Locale.ROOT));
+            Log.i(TAG, "QUIC/UDP 443 policy: " + (blockQuic ? "blocked" : "allowed"));
             Log.i(TAG, "VPN started with TUN-to-SOCKS bridge and local SOCKS on 127.0.0.1:" + SOCKS_PORT);
         } catch (Exception error) {
             state.set(VpnState.ERROR);
             Log.e(TAG, "Failed to start VPN", error);
             stopVpn();
         }
+    }
+
+    private void configureAppRouting(Builder builder) {
+        AppRoutingSettings.Snapshot routing = AppRoutingSettings.load(this);
+        if (!routing.isSelectedOnly()) {
+            try {
+                builder.addDisallowedApplication(getPackageName());
+            } catch (android.content.pm.PackageManager.NameNotFoundException error) {
+                throw new IllegalStateException("VPN package is not installed", error);
+            }
+            Log.i(TAG, "Routing all apps except the VPN process");
+            return;
+        }
+
+        int addedPackages = 0;
+        for (String packageName : routing.getPackages()) {
+            try {
+                builder.addAllowedApplication(packageName);
+                addedPackages += 1;
+            } catch (android.content.pm.PackageManager.NameNotFoundException error) {
+                Log.w(TAG, "Ignoring uninstalled routed app: " + packageName);
+            }
+        }
+        if (addedPackages == 0) {
+            throw new IllegalStateException("Selected-app routing requires at least one installed app");
+        }
+        Log.i(TAG, "Routing " + addedPackages + " selected app(s)");
     }
 
     private synchronized void stopVpn() {

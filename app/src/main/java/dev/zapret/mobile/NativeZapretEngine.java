@@ -10,6 +10,8 @@ public final class NativeZapretEngine {
 
     public static native String version();
 
+    public static native int configure(int profileId, boolean blockQuic);
+
     public static native int start(int socksPort);
 
     public static native void stop();

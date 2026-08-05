@@ -1,7 +1,8 @@
 param(
     [string]$AvdName = "zapret_api36_x86_64",
     [string]$Serial = "emulator-5554",
-    [int]$Port = 18081
+    [int]$Port = 18081,
+    [switch]$AggressiveProfile
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +20,9 @@ $appApk = Join-Path $root "app\build\outputs\apk\debug\app-debug.apk"
 $clientApk = Join-Path $root "test-client\build\outputs\apk\debug\test-client-debug.apk"
 $startFlow = Join-Path $root ".maestro\zapret-smoke.yaml"
 $stopFlow = Join-Path $root ".maestro\zapret-stop.yaml"
-$artifactRoot = Join-Path $root "build\test-artifacts\dpi-proof"
+$profileFlow = Join-Path $root ".maestro\zapret-profile-aggressive.yaml"
+$artifactName = if ($AggressiveProfile) { "dpi-proof-aggressive" } else { "dpi-proof" }
+$artifactRoot = Join-Path $root "build\test-artifacts\$artifactName"
 $simulator = Join-Path $root "tools\dpi_http_simulator.py"
 $report = Join-Path $artifactRoot "dpi-report.json"
 $ready = Join-Path $artifactRoot "dpi-ready.txt"
@@ -137,6 +140,21 @@ try {
     Wait-DeviceReady -TargetSerial $Serial -TimeoutSeconds 180
     & $adb -s $Serial logcat -c
 
+    if ($AggressiveProfile) {
+        Invoke-MaestroFlow `
+            -TargetSerial $Serial `
+            -FlowPath $profileFlow `
+            -JunitPath (Join-Path $artifactRoot "maestro-profile-junit.xml") `
+            -OutputDir (Join-Path $artifactRoot "maestro-profile-output") `
+            -Name "Maestro aggressive-profile flow"
+
+        $enginePreferences = & $adb -s $Serial shell run-as dev.zapret.mobile cat shared_prefs/engine_settings.xml
+        $enginePreferences | Set-Content -LiteralPath (Join-Path $artifactRoot "engine-settings.xml")
+        if (-not ($enginePreferences -match 'name="strategy_profile" value="2"')) {
+            throw "Aggressive strategy profile was not persisted"
+        }
+    }
+
     Invoke-MaestroFlow `
         -TargetSerial $Serial `
         -FlowPath $startFlow `
@@ -192,6 +210,9 @@ try {
     if (-not $matched) {
         throw "DPI proof did not observe expected raw test-client success"
     }
+    if ($AggressiveProfile -and -not ($logcat -match "ZapretVpnService.*Strategy profile: aggressive")) {
+        throw "VPN service did not apply the aggressive strategy profile"
+    }
 
     if ($server -ne $null -and -not $server.HasExited) {
         Wait-Process -Id $server.Id -Timeout 5 -ErrorAction SilentlyContinue
@@ -220,7 +241,8 @@ try {
         throw "TUN address still present after DPI proof cleanup"
     }
 
-    Write-Host "DPI proof passed on port $Port. Artifacts: $artifactRoot"
+    $profileName = if ($AggressiveProfile) { "aggressive" } else { "balanced" }
+    Write-Host "DPI proof passed on port $Port with $profileName profile. Artifacts: $artifactRoot"
 } finally {
     if ($server -ne $null -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force

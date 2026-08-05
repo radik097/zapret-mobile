@@ -7,11 +7,26 @@
     <string name="subtitle">Rootless local VpnService with a Rust DPI engine. No remote VPN server, no IP change, no TLS MITM.</string>
     <string name="start_vpn">Start VPN</string>
     <string name="stop_vpn">Stop VPN</string>
-    <string name="diagnostics">Engine: %1$s\nSOCKS: 127.0.0.1:1080\nTraffic mode: system-wide IPv4 MVP</string>
+    <string name="diagnostics">Engine: %1$s\nSOCKS: 127.0.0.1:1080\nTraffic: IPv4 TCP/UDP</string>
+    <string name="profile_title">Strategy profile</string>
+    <string name="profile_compatible">Compatible</string>
+    <string name="profile_balanced">Balanced</string>
+    <string name="profile_aggressive">Aggressive</string>
+    <string name="routing_title">App routing</string>
+    <string name="routing_selected_only">Route selected apps only</string>
+    <string name="routing_all_apps_summary">All apps are routed. Changes apply on the next VPN start.</string>
+    <string name="routing_no_apps_summary">No apps selected. Choose at least one app before starting.</string>
+    <string name="routing_selected_summary">Selected apps: %1$d. Changes apply on the next VPN start.</string>
+    <string name="routing_choose_apps">Choose apps</string>
+    <string name="routing_dialog_title">Apps routed through Zapret</string>
+    <string name="routing_save">Save</string>
+    <string name="block_quic">Block QUIC (UDP/443)</string>
     <string name="status_format">Status: %1$s</string>
     <string name="state_stopped">Stopped</string>
     <string name="state_preparing">Preparing</string>
     <string name="state_starting">Starting</string>
     <string name="state_stopping">Stopping</string>
     <string name="state_permission_denied">VPN permission denied</string>
+    <string name="state_select_apps">Select at least one app</string>
+    <string name="state_no_apps_found">No launchable apps found</string>
 </resources>

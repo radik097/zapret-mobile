@@ -1,0 +1,14 @@
+appId: dev.zapret.mobile
+name: Zapret Mobile aggressive profile
+---
+- launchApp
+- assertVisible: "Strategy profile"
+- assertVisible: "Balanced"
+- tapOn: "Balanced"
+- tapOn: "Aggressive"
+- extendedWaitUntil:
+    visible: "Aggressive"
+    timeout: 10000
+- stopApp
+- launchApp
+- assertVisible: "Aggressive"

@@ -1,6 +1,6 @@
 # TASKS: Active Queue
 
-Updated: 2026-08-06 01:34:05 +10:00
+Updated: 2026-08-06 02:11:18 +10:00
 
 ## Current Task
 
@@ -24,11 +24,9 @@ Completion criteria:
 ## Backlog
 
 - TASK-008: Replace current package-level VPN loop avoidance with explicit socket protection callback/path for outbound Rust sockets.
-- TASK-009: Add persistent strategy profiles and selection UI.
-- TASK-010: Add app routing selection UI and persistence.
+- TASK-021: Add Automatic fallback and Custom strategy profiles; extend Aggressive with multi-split and TLS record fragmentation.
 - TASK-011: Add robust TLS ClientHello positive fixtures, SNI positions, ALPN parsing, and malformed packet coverage.
 - TASK-012: Add HTTP parser coverage for methods, case-insensitive Host, header limits, and malformed input.
-- TASK-013: Add UDP/443 blocking policy.
 - TASK-014: Run on physical device and verify permission request, TUN creation, start/stop, and non-crash behavior.
 - TASK-004: Research the referenced third-party repositories and licenses before reusing components.
 - TASK-006: Do not claim MVP readiness until TUN traffic is really relayed and runtime/device behavior is verified.
@@ -51,3 +49,6 @@ Completion criteria:
 - TASK-018: Added a deterministic local HTTP DPI simulator harness with `tools\dpi_http_simulator.py` and `scripts\dpi-proof.ps1`; the raw test client sends `Host: blocked.example` through the active VPN, the simulator observes split chunks, and `dpi-report.json` records `decision=allowed_split`.
 - TASK-017A: Added emulator PCAP capture proof with `scripts\dpi-proof-pcap.ps1`; it restarts the AVD with Android Emulator `-tcpdump`, runs the DPI proof, stops the emulator to flush capture data, and writes `build\test-artifacts\dpi-proof-pcap\emulator-network.pcap`.
 - TASK-018A: Hardened `tools\dpi_http_simulator.py` to ignore empty/no-data TCP connections before the real raw HTTP request; an attempted profile/JNI strategy UI change was rolled back because runtime DPI proof failed.
+- TASK-010: Added persistent app routing settings and UI. Users can route all apps or select launcher apps; `ZapretVpnService` applies the saved mode with `addDisallowedApplication` or `addAllowedApplication`. `scripts\traffic-proof.ps1 -SelectedAppsOnly` verified persisted selection and TCP traffic through the VPN on the emulator.
+- TASK-013: Added a persistent `Block QUIC (UDP/443)` switch, separate JNI engine configuration, and a Rust UDP relay policy that drops destination port 443 when enabled. The policy is enabled by default, covered by Rust unit tests, and the emulator DPI proof confirmed the configured native engine still starts and relays TCP correctly.
+- TASK-009: Added persistent Compatible, Balanced, and Aggressive profiles with a Spinner UI and native behavior. Balanced preserves midpoint split plus 12 ms delay, Compatible uses the same single split without delay, and Aggressive splits after the first Host/SNI character plus 35 ms delay. `scripts\dpi-proof.ps1 -AggressiveProfile` verified persistence and a distinct early split on the emulator.

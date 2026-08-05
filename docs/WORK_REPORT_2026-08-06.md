@@ -72,11 +72,11 @@ An attempted profile/settings UI and JNI strategy flag change was tested and rej
 
 ## Current Known Limits
 
-- App selection UI is not implemented.
-- Persistent strategy profiles are not implemented.
+- App selection UI was implemented after the original report; see the post-report update below.
+- Compatible, Balanced, and Aggressive profiles were implemented after the original report; Automatic/Custom profiles and advanced aggressive actions remain incomplete.
 - Production Rust socket protection callback is not implemented; current loop avoidance uses `addDisallowedApplication(getPackageName())`.
 - HAR/mitmproxy or HTTP Toolkit export is not implemented.
-- QUIC/UDP443 policy is not implemented in the production app.
+- QUIC/UDP443 policy was implemented after the original report; see the post-report updates below.
 - Physical device verification has not been performed; one physical/network ADB device was visible, but this work did not install or test on it.
 - This is a local debug APK and local proof harness, not a released production package.
 
@@ -90,3 +90,15 @@ powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1
 powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1
 powershell -ExecutionPolicy Bypass -File scripts\dpi-proof-pcap.ps1
 ```
+
+## Post-report update: selected-app routing
+
+Persistent application routing was implemented and runtime-verified after this report was first written. The app now supports all-app routing or a saved launcher-app allow-list; `scripts\traffic-proof.ps1 -SelectedAppsOnly` verified selection persistence, `VpnService.Builder.addAllowedApplication`, and `result=200 body=zapret-proof` through the emulator VPN path. The updated debug APK SHA-256 is `A6358B77CB104A99FE64EA27E177269AFAF47B6EBC985D609F8824A1118AA7C5`.
+
+## Post-report update: QUIC/UDP 443 policy
+
+A persistent `Block QUIC (UDP/443)` switch and Rust relay policy were added. The Android service configures the policy through a separate JNI call before startup; the Rust UDP relay drops destination port 443 when enabled. Rust tests pass 7/7, and the emulator DPI proof passed with the configured policy logged as blocked. The updated debug APK SHA-256 is `5DF8DC1CF76EBAF9C204288480F78E4BACC08853719C16CE5A591FC32FDF8767`.
+
+## Post-report update: native strategy profiles
+
+Persistent Compatible, Balanced, and Aggressive profiles were added to the UI and native engine. `scripts\dpi-proof.ps1 -AggressiveProfile` verified UI persistence, JNI configuration, and a distinct early split: the aggressive first chunk ends at `Host: b`, while Balanced ends at `Host: blocked`. Rust tests pass 8/8. The updated debug APK SHA-256 is `4CAA7B59DEB25C80560AFDBDF8699ED27DE6205376939809E260A1F00C85083C`.

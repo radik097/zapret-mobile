@@ -2,7 +2,7 @@
 
 Zapret Mobile is a rootless Android app for local traffic handling through Android `VpnService`. It does not use a remote VPN server, does not change the external IP address, and does not decrypt HTTPS traffic.
 
-Current state: early Rust-first MVP skeleton. The APK can build, the app can request VPN permission, create a TUN interface, start a foreground service, and load a Rust native engine with a local SOCKS5 listener. The full TUN-to-SOCKS bridge and production DPI feature set are still in progress.
+Current state: working Rust-first MVP in progress. The APK requests VPN permission, creates a TUN interface, relays selected or system-wide IPv4 traffic through `hev-socks5-tunnel` and the local Rust SOCKS5/DPI engine, supports persistent Compatible/Balanced/Aggressive profiles and per-app routing, and can block QUIC/UDP 443. Automatic/Custom profile expansion, advanced QUIC analysis, explicit native socket protection, and physical-device verification are still in progress.
 
 ## Build
 
@@ -18,6 +18,18 @@ Manual commands:
 .\gradlew.bat assembleDebug
 ```
 
+Selected-app runtime proof:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\traffic-proof.ps1 -SelectedAppsOnly
+```
+
+Aggressive-profile DPI proof:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dpi-proof.ps1 -AggressiveProfile
+```
+
 ## Boundaries
 
 - No root, Magisk, iptables, nftables, NFQUEUE, custom kernel, or hidden remote fallback.
@@ -25,4 +37,3 @@ Manual commands:
 - Local listeners must remain on `127.0.0.1`.
 
 See `docs/ARCHITECTURE.md`, `docs/LIMITATIONS.md`, `docs/SECURITY.md`, and `docs/THIRD_PARTY_LICENSES.md`.
-
