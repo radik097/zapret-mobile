@@ -2,6 +2,7 @@ package dev.zapret.mobile;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -41,6 +42,11 @@ public final class SettingsActivity extends Activity {
     }
 
     @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(LanguageSettings.wrap(base));
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         routingSettings = AppRoutingSettings.load(this);
@@ -61,6 +67,7 @@ public final class SettingsActivity extends Activity {
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(pad, pad, pad, pad);
 
+        body.addView(buildLanguageCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildThemeCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildRoutingCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildEngineCard(), UiKit.fullWidth(this, 0, 16));
@@ -73,6 +80,31 @@ public final class SettingsActivity extends Activity {
         scroll.setBackgroundColor(currentTheme.background);
         scroll.addView(root);
         return scroll;
+    }
+
+    private LinearLayout buildLanguageCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(
+            UiKit.sectionTitle(this, currentTheme, getString(R.string.language_title)),
+            UiKit.fullWidth()
+        );
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.language_subtitle)),
+            UiKit.fullWidth(this, 4, 12)
+        );
+
+        AppLanguage target = LanguageSettings.getLanguage(this).other();
+        // Labelled with the language it switches *to*, written in that
+        // language: someone who can't read the current one still can read this.
+        Button switchButton = UiKit.outlineButton(
+            this, currentTheme, getString(R.string.language_switch_to, target.ownName));
+        switchButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Switched language to " + target.tag);
+            LanguageSettings.setLanguage(this, target);
+            recreate();
+        });
+        card.addView(switchButton, UiKit.fullWidth());
+        return card;
     }
 
     private LinearLayout buildThemeCard() {

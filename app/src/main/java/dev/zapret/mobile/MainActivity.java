@@ -1,8 +1,10 @@
 package dev.zapret.mobile;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.GradientDrawable;
 import android.net.VpnService;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -16,15 +18,28 @@ public final class MainActivity extends Activity {
     private static final int VPN_REQUEST = 710;
     private static final int NOTIFICATION_PERMISSION_REQUEST = 711;
 
+    /** Red for "running, tap to stop"; the theme accent means "stopped, tap to start". */
+    private static final int POWER_STOP_COLOR = 0xFFD64545;
+
     private TextView status;
+    private TextView powerButton;
+    private TextView powerHint;
     private AppTheme currentTheme;
+    private AppLanguage currentLanguage;
+
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(LanguageSettings.wrap(base));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         currentTheme = ThemeSettings.getTheme(this);
+        currentLanguage = LanguageSettings.getLanguage(this);
         setContentView(buildContent());
-        updateStatus(getString(R.string.state_stopped));
+        updateStatus(getString(
+            ZapretVpnService.isRunning() ? R.string.state_starting : R.string.state_stopped));
         requestNotificationPermissionIfNeeded();
         UpdateManager.checkOnLaunch(this);
     }
@@ -32,11 +47,56 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // A language change has to go through recreate(), not setContentView:
+        // strings resolve against the context built in attachBaseContext, so
+        // rebuilding the views alone would keep rendering the old language.
+        if (LanguageSettings.getLanguage(this) != currentLanguage) {
+            recreate();
+            return;
+        }
         AppTheme latestTheme = ThemeSettings.getTheme(this);
         if (latestTheme != currentTheme) {
             currentTheme = latestTheme;
             setContentView(buildContent());
-            updateStatus(getString(R.string.state_stopped));
+        }
+        // The service can have started or stopped while this screen was away
+        // (notification actions, onRevoke, a crash), so the control is
+        // re-synced from the service rather than from what was last tapped.
+        boolean running = ZapretVpnService.isRunning();
+        applyPowerState(running);
+        updateStatus(getString(running ? R.string.state_starting : R.string.state_stopped));
+    }
+
+    private void togglePower() {
+        if (ZapretVpnService.isRunning()) {
+            AppLog.userAction(this, "Tapped Stop VPN");
+            Intent intent = new Intent(this, ZapretVpnService.class);
+            intent.setAction(ZapretVpnService.ACTION_STOP);
+            startService(intent);
+            updateStatus(getString(R.string.state_stopping));
+            applyPowerState(false);
+        } else {
+            AppLog.userAction(this, "Tapped Start VPN");
+            requestVpn();
+        }
+    }
+
+    /** Repaints the single power control to match `running`. */
+    private void applyPowerState(boolean running) {
+        if (powerButton == null) {
+            return;
+        }
+        int fill = running ? POWER_STOP_COLOR : currentTheme.accent;
+        powerButton.setText(getString(running ? R.string.power_stop : R.string.power_start));
+        powerButton.setTextColor(running ? 0xFFFFFFFF : currentTheme.onAccent);
+        GradientDrawable disc = new GradientDrawable();
+        disc.setShape(GradientDrawable.OVAL);
+        disc.setColor(fill);
+        disc.setStroke(UiKit.dp(this, 6), (fill & 0x00FFFFFF) | 0x55000000);
+        powerButton.setBackground(disc);
+        if (powerHint != null) {
+            powerHint.setText(getString(
+                running ? R.string.power_hint_stop : R.string.power_hint_start));
         }
     }
 
@@ -77,22 +137,21 @@ public final class MainActivity extends Activity {
         statusCard.addView(status, UiKit.fullWidth());
         body.addView(statusCard, UiKit.fullWidth());
 
-        Button start = UiKit.primaryButton(this, currentTheme, getString(R.string.start_vpn));
-        start.setOnClickListener(v -> {
-            AppLog.userAction(this, "Tapped Start VPN");
-            requestVpn();
-        });
-        body.addView(start, UiKit.fullWidth(this, 20, 10));
+        boolean running = ZapretVpnService.isRunning();
+        powerButton = UiKit.powerButton(
+            this,
+            currentTheme,
+            getString(running ? R.string.power_stop : R.string.power_start),
+            running ? POWER_STOP_COLOR : currentTheme.accent,
+            running ? 0xFFFFFFFF : currentTheme.onAccent
+        );
+        powerButton.setOnClickListener(v -> togglePower());
+        body.addView(powerButton, UiKit.circle(this, 190, 24, 12));
 
-        Button stop = UiKit.dangerButton(this, getString(R.string.stop_vpn));
-        stop.setOnClickListener(v -> {
-            AppLog.userAction(this, "Tapped Stop VPN");
-            Intent intent = new Intent(this, ZapretVpnService.class);
-            intent.setAction(ZapretVpnService.ACTION_STOP);
-            startService(intent);
-            updateStatus(getString(R.string.state_stopping));
-        });
-        body.addView(stop, UiKit.fullWidth(this, 0, 20));
+        powerHint = UiKit.bodyText(this, currentTheme, "");
+        powerHint.setGravity(Gravity.CENTER);
+        body.addView(powerHint, UiKit.fullWidth(this, 0, 20));
+        applyPowerState(running);
 
         LinearLayout navRow = new LinearLayout(this);
         navRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -147,6 +206,9 @@ public final class MainActivity extends Activity {
         intent.setAction(ZapretVpnService.ACTION_START);
         startForegroundService(intent);
         updateStatus(getString(R.string.state_starting));
+        // The tunnel comes up asynchronously, so the control is flipped
+        // optimistically here and re-synced from the service in onResume.
+        applyPowerState(true);
     }
 
     private void updateStatus(String text) {

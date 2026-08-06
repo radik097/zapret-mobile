@@ -1,6 +1,7 @@
 package dev.zapret.mobile;
 
 import android.app.Activity;
+import android.content.Context;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -28,15 +29,22 @@ public final class StrategiesActivity extends Activity {
     };
 
     private AppTheme currentTheme;
+    private AppLanguage currentLanguage;
     private StrategyRepository strategyRepository;
     private LinearLayout packsContainer;
     private LinearLayout autoTestResultsContainer;
     private TextView activeStrategyText;
 
     @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(LanguageSettings.wrap(base));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         currentTheme = ThemeSettings.getTheme(this);
+        currentLanguage = LanguageSettings.getLanguage(this);
         strategyRepository = new StrategyRepository(this);
         setContentView(buildContent());
         renderPacks(strategyRepository.getCachedPacks());
@@ -45,6 +53,12 @@ public final class StrategiesActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Strings resolve against the context built in attachBaseContext, so
+        // a language change needs a full recreate, not a view rebuild.
+        if (LanguageSettings.getLanguage(this) != currentLanguage) {
+            recreate();
+            return;
+        }
         updateActiveStrategyText();
     }
 

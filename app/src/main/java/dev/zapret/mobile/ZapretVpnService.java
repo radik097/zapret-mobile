@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -34,6 +35,20 @@ public final class ZapretVpnService extends android.net.VpnService {
     /** The currently running instance, or null if the VPN isn't started. Same-process only. */
     static ZapretVpnService getRunningInstance() {
         return runningInstance;
+    }
+
+    /**
+     * Whether the tunnel is up right now. `runningInstance` is set only once
+     * the tunnel is established and cleared as the first step of stopping, so
+     * it doubles as the live state without binding to the service.
+     */
+    static boolean isRunning() {
+        return runningInstance != null;
+    }
+
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(LanguageSettings.wrap(base));
     }
 
     @Override

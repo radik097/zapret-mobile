@@ -123,6 +123,44 @@ final class UiKit {
         return button;
     }
 
+    /**
+     * The single round power control on the main screen. Built as a TextView
+     * rather than a Button because Button's platform background insets fight
+     * a fixed square size and leave the oval visibly clipped.
+     *
+     * `fillColor` carries the state: the accent means "stopped, tap to start",
+     * red means "running, tap to stop". A ring in the same colour, drawn a few
+     * dp outside the disc, keeps the control readable on both light and dark
+     * cards without depending on contrast against the background alone.
+     */
+    static TextView powerButton(Context context, AppTheme theme, String text, int fillColor, int labelColor) {
+        TextView button = new TextView(context);
+        button.setText(text);
+        button.setTextColor(labelColor);
+        button.setTextSize(24);
+        button.setGravity(Gravity.CENTER);
+        button.setAllCaps(true);
+
+        GradientDrawable disc = new GradientDrawable();
+        disc.setShape(GradientDrawable.OVAL);
+        disc.setColor(fillColor);
+        disc.setStroke(dp(context, 6), withAlpha(fillColor, 0x55));
+        button.setBackground(disc);
+
+        button.setClickable(true);
+        button.setFocusable(true);
+        return button;
+    }
+
+    /** Square layout params, so {@link #powerButton} renders as a circle rather than an ellipse. */
+    static LinearLayout.LayoutParams circle(Context context, int diameterDp, int marginTopDp, int marginBottomDp) {
+        int size = dp(context, diameterDp);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(size, size);
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.setMargins(0, dp(context, marginTopDp), 0, dp(context, marginBottomDp));
+        return params;
+    }
+
     static Switch styledSwitch(Context context, AppTheme theme, String text) {
         Switch switchView = new Switch(context);
         switchView.setText(text);
