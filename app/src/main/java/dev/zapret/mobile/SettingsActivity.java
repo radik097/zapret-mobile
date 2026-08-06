@@ -95,6 +95,7 @@ public final class SettingsActivity extends Activity {
             public void onItemSelected(AdapterView<?> parent, android.view.View view, int position, long id) {
                 AppTheme selected = themes[position];
                 if (selected != currentTheme) {
+                    AppLog.userAction(SettingsActivity.this, "Selected theme: " + selected);
                     ThemeSettings.setTheme(SettingsActivity.this, selected);
                     currentTheme = selected;
                     setContentView(buildContent());
@@ -117,6 +118,7 @@ public final class SettingsActivity extends Activity {
         routingSwitch = UiKit.styledSwitch(this, currentTheme, getString(R.string.routing_selected_only));
         routingSwitch.setChecked(routingSettings.isSelectedOnly());
         routingSwitch.setOnCheckedChangeListener((button, checked) -> {
+            AppLog.userAction(this, "Toggled route-selected-apps-only: " + checked);
             AppRoutingSettings.save(this, checked, routingSettings.getPackages());
             routingSettings = AppRoutingSettings.load(this);
             updateRoutingUi();
@@ -127,7 +129,10 @@ public final class SettingsActivity extends Activity {
         card.addView(routingSummary, UiKit.fullWidth(this, 4, 8));
 
         chooseApps = UiKit.outlineButton(this, currentTheme, getString(R.string.routing_choose_apps));
-        chooseApps.setOnClickListener(v -> showAppSelectionDialog());
+        chooseApps.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Choose apps");
+            showAppSelectionDialog();
+        });
         card.addView(chooseApps, UiKit.fullWidth());
         return card;
     }
@@ -138,7 +143,10 @@ public final class SettingsActivity extends Activity {
 
         Switch quicSwitch = UiKit.styledSwitch(this, currentTheme, getString(R.string.block_quic));
         quicSwitch.setChecked(EngineSettings.isQuicBlocked(this));
-        quicSwitch.setOnCheckedChangeListener((button, checked) -> EngineSettings.setQuicBlocked(this, checked));
+        quicSwitch.setOnCheckedChangeListener((button, checked) -> {
+            AppLog.userAction(this, "Toggled Block QUIC: " + checked);
+            EngineSettings.setQuicBlocked(this, checked);
+        });
         card.addView(quicSwitch, UiKit.fullWidth(this, 8, 0));
         return card;
     }
@@ -154,7 +162,10 @@ public final class SettingsActivity extends Activity {
         card.addView(versionText, UiKit.fullWidth(this, 4, 12));
 
         Button checkButton = UiKit.outlineButton(this, currentTheme, getString(R.string.update_check_now));
-        checkButton.setOnClickListener(v -> UpdateManager.checkManually(this));
+        checkButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Check for updates");
+            UpdateManager.checkManually(this);
+        });
         card.addView(checkButton, UiKit.fullWidth());
         return card;
     }
@@ -168,7 +179,10 @@ public final class SettingsActivity extends Activity {
         );
 
         Button viewButton = UiKit.outlineButton(this, currentTheme, getString(R.string.diagnostics_log_view));
-        viewButton.setOnClickListener(v -> showLogDialog());
+        viewButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped View today's log");
+            showLogDialog();
+        });
         card.addView(viewButton, UiKit.fullWidth());
         return card;
     }
@@ -193,6 +207,7 @@ public final class SettingsActivity extends Activity {
             .setTitle(R.string.diagnostics_log_title)
             .setView(scroll)
             .setNeutralButton(R.string.diagnostics_log_copy, (dialog, which) -> {
+                AppLog.userAction(this, "Tapped Copy log");
                 android.content.ClipboardManager clipboard =
                     (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (clipboard != null) {
@@ -264,6 +279,7 @@ public final class SettingsActivity extends Activity {
             })
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.routing_save, (dialog, which) -> {
+                AppLog.userAction(this, "Saved app selection: " + selectedPackages.size() + " app(s)");
                 AppRoutingSettings.save(this, routingSwitch.isChecked(), selectedPackages);
                 routingSettings = AppRoutingSettings.load(this);
                 updateRoutingUi();

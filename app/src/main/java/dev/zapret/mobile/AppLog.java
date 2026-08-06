@@ -24,8 +24,19 @@ final class AppLog {
     private static final String LOG_DIR = "logs";
     private static final String FILE_PREFIX = "zapret-";
     private static final String FILE_SUFFIX = ".log";
+    private static final String USER_ACTION_TAG = "UserAction";
 
     private AppLog() {
+    }
+
+    /**
+     * Logs something the user explicitly did (tapped a button, changed a
+     * switch, picked a spinner item) under one consistent tag, so the log
+     * clearly distinguishes "the user pressed this" from automatic engine/
+     * lifecycle events when reconstructing what happened in a session.
+     */
+    static void userAction(Context context, String description) {
+        i(context, USER_ACTION_TAG, description);
     }
 
     static void i(Context context, String tag, String message) {

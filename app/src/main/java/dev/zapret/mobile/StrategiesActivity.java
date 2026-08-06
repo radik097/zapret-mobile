@@ -94,7 +94,10 @@ public final class StrategiesActivity extends Activity {
         );
 
         Button runButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_autotest_run));
-        runButton.setOnClickListener(v -> runAutoTest(runButton));
+        runButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Run auto-test");
+            runAutoTest(runButton);
+        });
         card.addView(runButton, UiKit.fullWidth(this, 0, 12));
 
         autoTestResultsContainer = new LinearLayout(this);
@@ -169,6 +172,7 @@ public final class StrategiesActivity extends Activity {
         Button applyButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_use));
         applyButton.setEnabled(successCount > 0);
         applyButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Applied auto-test result: " + result.profile);
             EngineSettings.setStrategyProfile(this, result.profile);
             updateActiveStrategyText();
             Toast.makeText(
@@ -210,10 +214,18 @@ public final class StrategiesActivity extends Activity {
         }
         spinner.setSelection(selectedIndex);
         spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            private boolean userDriven;
+
             @Override
             public void onItemSelected(AdapterView<?> parent, android.view.View view, int position, long id) {
-                EngineSettings.setStrategyProfile(StrategiesActivity.this, BUILT_IN_PROFILES[position]);
-                updateActiveStrategyText();
+                // Spinner fires this once automatically on initial layout, not just on
+                // user interaction; only log/apply from the second call onward.
+                if (userDriven) {
+                    AppLog.userAction(StrategiesActivity.this, "Selected built-in strategy: " + BUILT_IN_PROFILES[position]);
+                    EngineSettings.setStrategyProfile(StrategiesActivity.this, BUILT_IN_PROFILES[position]);
+                    updateActiveStrategyText();
+                }
+                userDriven = true;
             }
 
             @Override
@@ -232,6 +244,7 @@ public final class StrategiesActivity extends Activity {
         card.addView(ttlInput, UiKit.fullWidth());
         Button ttlSaveButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_fake_ttl_save));
         ttlSaveButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Save TTL: " + ttlInput.getText());
             try {
                 int ttl = Integer.parseInt(ttlInput.getText().toString().trim());
                 if (ttl < 1 || ttl > 64) {
@@ -270,6 +283,7 @@ public final class StrategiesActivity extends Activity {
 
         Button saveButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_targeting_save));
         saveButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Save targeting: enabled=" + hostlistSwitch.isChecked());
             EngineSettings.setHostlistTargeting(this, hostlistSwitch.isChecked(), domainsInput.getText().toString());
             Toast.makeText(this, R.string.strategies_targeting_saved, Toast.LENGTH_SHORT).show();
         });
@@ -289,7 +303,10 @@ public final class StrategiesActivity extends Activity {
         );
 
         Button refreshButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_refresh));
-        refreshButton.setOnClickListener(v -> refreshPacks());
+        refreshButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Refresh strategy packs");
+            refreshPacks();
+        });
         card.addView(refreshButton, UiKit.fullWidth(this, 0, 12));
 
         packsContainer = new LinearLayout(this);
@@ -350,6 +367,7 @@ public final class StrategiesActivity extends Activity {
 
             Button useButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_use));
             useButton.setOnClickListener(v -> {
+                AppLog.userAction(StrategiesActivity.this, "Selected downloaded strategy pack: " + pack.name);
                 strategyRepository.selectPack(StrategiesActivity.this, pack);
                 updateActiveStrategyText();
                 Toast.makeText(

@@ -78,11 +78,15 @@ public final class MainActivity extends Activity {
         body.addView(statusCard, UiKit.fullWidth());
 
         Button start = UiKit.primaryButton(this, currentTheme, getString(R.string.start_vpn));
-        start.setOnClickListener(v -> requestVpn());
+        start.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Start VPN");
+            requestVpn();
+        });
         body.addView(start, UiKit.fullWidth(this, 20, 10));
 
         Button stop = UiKit.dangerButton(this, getString(R.string.stop_vpn));
         stop.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Stop VPN");
             Intent intent = new Intent(this, ZapretVpnService.class);
             intent.setAction(ZapretVpnService.ACTION_STOP);
             startService(intent);
@@ -97,13 +101,19 @@ public final class MainActivity extends Activity {
         );
 
         Button strategiesButton = UiKit.outlineButton(this, currentTheme, getString(R.string.nav_strategies));
-        strategiesButton.setOnClickListener(v -> startActivity(new Intent(this, StrategiesActivity.class)));
+        strategiesButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Opened Strategies screen");
+            startActivity(new Intent(this, StrategiesActivity.class));
+        });
         LinearLayout.LayoutParams strategiesParams = new LinearLayout.LayoutParams(navButtonParams);
         strategiesParams.setMarginEnd(UiKit.dp(this, 8));
         navRow.addView(strategiesButton, strategiesParams);
 
         Button settingsButton = UiKit.outlineButton(this, currentTheme, getString(R.string.nav_settings));
-        settingsButton.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        settingsButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Opened Settings screen");
+            startActivity(new Intent(this, SettingsActivity.class));
+        });
         navRow.addView(settingsButton, navButtonParams);
 
         body.addView(navRow, UiKit.fullWidth());
