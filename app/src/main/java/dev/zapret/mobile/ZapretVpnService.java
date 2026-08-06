@@ -129,6 +129,7 @@ public final class ZapretVpnService extends android.net.VpnService {
             if (fakeTtlResult != 0) {
                 throw new IllegalStateException("Fake-TTL configuration failed: " + fakeTtlResult);
             }
+            NativeZapretEngine.configureFakeDecoy(EngineSettings.isFakeDecoyEnabled(this));
         }
         int hostlistResult = NativeZapretEngine.configureHostlist(
             EngineSettings.getHostlistDomains(this),
@@ -151,6 +152,7 @@ public final class ZapretVpnService extends android.net.VpnService {
         NativeZapretEngine.configure(this, candidate.getNativeId(), blockQuic);
         if (candidate == StrategyProfile.FLOWSEAL) {
             NativeZapretEngine.configureFakeTtl(EngineSettings.getFakeTtl(this));
+            NativeZapretEngine.configureFakeDecoy(EngineSettings.isFakeDecoyEnabled(this));
         }
         NativeZapretEngine.configureHostlist("", false);
     }

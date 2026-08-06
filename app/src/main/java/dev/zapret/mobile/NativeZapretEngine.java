@@ -20,6 +20,8 @@ public final class NativeZapretEngine {
 
     public static native int configureFakeTtl(int ttl);
 
+    public static native int configureFakeDecoy(boolean enabled);
+
     public static native int configureHostlist(String domainsCsv, boolean hostlistOnly);
 
     public static native int pollFailureCount();

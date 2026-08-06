@@ -11,6 +11,7 @@ final class EngineSettings {
     private static final String KEY_CUSTOM_STRATEGY_NAME = "custom_strategy_name";
     private static final String KEY_FAKE_TTL = "fake_ttl";
     private static final int DEFAULT_FAKE_TTL = 6;
+    private static final String KEY_FAKE_DECOY_ENABLED = "fake_decoy_enabled";
     private static final String KEY_HOSTLIST_ONLY = "hostlist_only";
     private static final String KEY_HOSTLIST_DOMAINS = "hostlist_domains";
     // Mirrors Flowseal's default Discord/YouTube targeting.
@@ -79,6 +80,25 @@ final class EngineSettings {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putInt(KEY_FAKE_TTL, ttl)
+            .apply();
+    }
+
+    /**
+     * Off by default: a low-TTL fake decoy only helps if the TTL is tuned
+     * below this network's real hop count to the destination. Guessed wrong
+     * (too high), the decoy reaches the real server intact and corrupts the
+     * handshake instead of the DPI middlebox alone seeing it. Split-only is
+     * the safe default; this is an opt-in for users who tune the TTL above.
+     */
+    static boolean isFakeDecoyEnabled(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(KEY_FAKE_DECOY_ENABLED, false);
+    }
+
+    static void setFakeDecoyEnabled(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_FAKE_DECOY_ENABLED, enabled)
             .apply();
     }
 

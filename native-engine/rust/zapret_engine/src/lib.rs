@@ -37,6 +37,17 @@ static CUSTOM_SPLIT: AtomicUsize = AtomicUsize::new(1);
 static CUSTOM_DELAY_MS: AtomicU64 = AtomicU64::new(0);
 static CONNECTION_FAILURES: AtomicU32 = AtomicU32::new(0);
 static FAKE_TTL: AtomicU8 = AtomicU8::new(DEFAULT_FAKE_TTL);
+// Off by default: without a way to read the real hop-count to the
+// destination (real zapret's "autottl" does this from the server's SYN-ACK
+// TTL, which needs raw packet access we don't have), a static guessed TTL
+// can be too high for a given network -- in which case the decoy doesn't
+// expire before reaching the real server, which then sees an unexpected
+// second ClientHello-shaped message on the same connection right before the
+// real one, corrupting the handshake (confirmed on-device: BoringSSL
+// BAD_DECRYPT/BAD_RECORD_MAC, 100% of Flowseal attempts on that network).
+// Split-only (no decoy) is the safe default; the decoy is opt-in for users
+// who tune FAKE_TTL correctly for their own network.
+static FAKE_DECOY_ENABLED: AtomicBool = AtomicBool::new(false);
 // When enabled, the active strategy is only applied to connections whose
 // SNI/Host suffix-matches an entry here; everything else relays untouched.
 // Mirrors Flowseal's --hostlist targeting (e.g. Discord/YouTube only)
@@ -152,6 +163,16 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configureFakeTt
         return -1;
     }
     FAKE_TTL.store(ttl as u8, Ordering::SeqCst);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configureFakeDecoy(
+    _env: *mut JNIEnv,
+    _class: JClass,
+    enabled: u8,
+) -> i32 {
+    FAKE_DECOY_ENABLED.store(enabled != 0, Ordering::SeqCst);
     0
 }
 
@@ -827,8 +848,10 @@ fn extract_hostname(packet: &[u8]) -> Option<String> {
 /// SNI start with a short delay. Falls back to a plain early split (no decoy)
 /// for non-TLS traffic, since a byte-similar fake only makes sense for TLS.
 fn send_flowseal_strategy(upstream: &mut TcpStream, packet: &[u8]) -> std::io::Result<()> {
-    if let Some(fake) = build_fake_tls_hello(packet) {
-        send_fake_decoy(upstream, &fake);
+    if FAKE_DECOY_ENABLED.load(Ordering::Relaxed) {
+        if let Some(fake) = build_fake_tls_hello(packet) {
+            send_fake_decoy(upstream, &fake);
+        }
     }
 
     match tls_sni_start_split_position(packet).or_else(|| http_host_start_split_position(packet)) {
@@ -1241,11 +1264,45 @@ mod tests {
 
         let mut upstream = TcpStream::connect(addr).expect("connect");
         FAKE_TTL.store(5, Ordering::SeqCst);
+        FAKE_DECOY_ENABLED.store(true, Ordering::SeqCst);
         send_flowseal_strategy(&mut upstream, &packet).expect("flowseal strategy");
+        FAKE_DECOY_ENABLED.store(false, Ordering::SeqCst);
         drop(upstream);
 
         let received = server.join().expect("server thread");
         assert!(!received.is_empty(), "server should have received at least the decoy or real data");
+    }
+
+    #[test]
+    fn flowseal_strategy_skips_decoy_when_disabled_by_default() {
+        let packet = build_test_client_hello("example.com");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept");
+            let mut received = Vec::new();
+            socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut buf = [0u8; 4096];
+            loop {
+                match socket.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(read) => received.extend_from_slice(&buf[..read]),
+                    Err(_) => break,
+                }
+            }
+            received
+        });
+
+        let mut upstream = TcpStream::connect(addr).expect("connect");
+        FAKE_DECOY_ENABLED.store(false, Ordering::SeqCst);
+        send_flowseal_strategy(&mut upstream, &packet).expect("flowseal strategy");
+        drop(upstream);
+
+        let received = server.join().expect("server thread");
+        assert_eq!(
+            received, packet,
+            "with the decoy disabled (the default), only the real split bytes should ever arrive"
+        );
     }
 
     #[test]

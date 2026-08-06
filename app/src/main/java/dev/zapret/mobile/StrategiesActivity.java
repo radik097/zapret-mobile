@@ -235,8 +235,20 @@ public final class StrategiesActivity extends Activity {
         card.addView(spinner, UiKit.fullWidth());
 
         card.addView(
-            UiKit.bodyText(this, currentTheme, getString(R.string.strategies_fake_ttl_label)),
+            UiKit.bodyText(this, currentTheme, getString(R.string.strategies_fake_decoy_warning)),
             UiKit.fullWidth(this, 16, 4)
+        );
+        Switch fakeDecoySwitch = UiKit.styledSwitch(this, currentTheme, getString(R.string.strategies_fake_decoy_enable));
+        fakeDecoySwitch.setChecked(EngineSettings.isFakeDecoyEnabled(this));
+        fakeDecoySwitch.setOnCheckedChangeListener((button, checked) -> {
+            AppLog.userAction(this, "Toggled fake decoy: " + checked);
+            EngineSettings.setFakeDecoyEnabled(this, checked);
+        });
+        card.addView(fakeDecoySwitch, UiKit.fullWidth(this, 4, 4));
+
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.strategies_fake_ttl_label)),
+            UiKit.fullWidth(this, 8, 4)
         );
         EditText ttlInput = UiKit.editText(this, currentTheme);
         ttlInput.setInputType(InputType.TYPE_CLASS_NUMBER);
