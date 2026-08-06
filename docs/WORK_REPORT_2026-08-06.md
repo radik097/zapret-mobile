@@ -267,3 +267,14 @@ This is independently corroborated by the code itself: with the decoy off, `PROF
 Also fixed a genuine test-isolation flake found while verifying: `flowseal_strategy_sends_decoy_then_splits_real_hello` and `flowseal_strategy_skips_decoy_when_disabled_by_default` both mutate the process-global `FAKE_DECOY_ENABLED` and `cargo test` runs them on parallel threads, so the decoy-off test intermittently observed decoy bytes and failed (observed once locally). Both now take a shared `DECOY_FLAG_GUARD` mutex.
 
 **Verification**: `cargo test` 22/22, run 5× consecutively with no flake. `gradlew testDebugUnitTest lintDebug assembleDebug` green across all 4 ABIs. Installed on the Pixel 8a via `adb install -r` as versionCode 6 / 0.1.5. Flowseal's actual behaviour with the decoy disabled is **still unconfirmed on-device** — that needs a fresh auto-test run on 0.1.5, which will now say `0.1.5 (build 6)` in its own log.
+
+## Post-report update: identifying who signs the discord.com certificate
+
+Asked whether the `CertPathValidatorException: Trust anchor for certification path not found` on discord.com is fixable at all. The earlier note calling it "a network-level interception, nothing in our code to change" was too quick a dismissal: **if** the chain is a DPI-injected substitute, that injection is triggered by the middlebox reading the SNI — which is exactly what a desync strategy is supposed to prevent, so it would be in scope after all. Two hypotheses that the existing log cannot distinguish:
+
+1. A substitute certificate injected in response to the SNI (a block mechanism — in scope for strategy work).
+2. A genuine trust-store/chain problem or a blanket MITM proxy (not in scope). Weak on the evidence, since `www.youtube.com` validates fine on the same network through the same code path — a blanket MITM would break both.
+
+Added the diagnostic that separates them: `StrategyAutoTester` now builds its `SSLSocketFactory` from an `SSLContext` wrapping a `ChainRecordingTrustManager`. That manager stores the presented chain and then **delegates to the platform's own `X509TrustManager` unchanged** — it is explicitly not a trust-all manager, validation is identical to before and a bad chain still fails the handshake. The only new behaviour is that a failure can now be logged as `... | peer cert: subject=..., issuer=..., chain_length=N`. A Let's Encrypt/Cloudflare issuer on a rejected chain means hypothesis 2; anything else (a self-signed leaf, an unknown local CA, a mismatched subject) means hypothesis 1 and points back at strategy work.
+
+**Verification**: `gradlew testDebugUnitTest lintDebug assembleDebug` green across all 4 ABIs; installed on the Pixel 8a. The diagnostic has not yet been run — it needs one auto-test on the device.

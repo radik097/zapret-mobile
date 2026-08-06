@@ -3,8 +3,12 @@ package dev.zapret.mobile;
 import android.os.Handler;
 import android.os.Looper;
 
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -13,6 +17,9 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -121,15 +128,77 @@ final class StrategyAutoTester {
         });
     }
 
+    /**
+     * Records the certificate chain the peer presented, then hands it to the
+     * platform's own trust manager unchanged. This is deliberately *not* a
+     * trust-all manager: validation still happens exactly as before and a bad
+     * chain still fails the handshake. The only added behaviour is keeping the
+     * chain around so a failure can be reported as "who signed this", which is
+     * what distinguishes a DPI-injected substitute certificate from an
+     * ordinary handshake failure.
+     */
+    private static final class ChainRecordingTrustManager implements X509TrustManager {
+        private final X509TrustManager delegate;
+        private volatile X509Certificate[] lastChain;
+
+        ChainRecordingTrustManager(X509TrustManager delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            delegate.checkClientTrusted(chain, authType);
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            lastChain = chain;
+            delegate.checkServerTrusted(chain, authType);
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return delegate.getAcceptedIssuers();
+        }
+
+        /** e.g. {@code "subject=CN=discord.com, issuer=CN=R11,O=Let's Encrypt"}, or null if nothing was presented. */
+        String describeLeaf() {
+            X509Certificate[] chain = lastChain;
+            if (chain == null || chain.length == 0) {
+                return null;
+            }
+            X509Certificate leaf = chain[0];
+            return "subject=" + leaf.getSubjectX500Principal().getName()
+                + ", issuer=" + leaf.getIssuerX500Principal().getName()
+                + ", chain_length=" + chain.length;
+        }
+    }
+
+    private static X509TrustManager platformTrustManager() throws Exception {
+        TrustManagerFactory factory =
+            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        factory.init((KeyStore) null);
+        for (TrustManager manager : factory.getTrustManagers()) {
+            if (manager instanceof X509TrustManager) {
+                return (X509TrustManager) manager;
+            }
+        }
+        throw new IllegalStateException("No platform X509TrustManager available");
+    }
+
     private static DomainResult testDomain(ZapretVpnService service, StrategyProfile profile, String domain) {
         long start = System.currentTimeMillis();
         DomainResult result;
+        ChainRecordingTrustManager trustManager = null;
         try (Socket socksSocket = new Socket()) {
             socksSocket.connect(new InetSocketAddress("127.0.0.1", ZapretVpnService.SOCKS_PORT), SOCKET_TIMEOUT_MS);
             socksSocket.setSoTimeout(SOCKET_TIMEOUT_MS);
             socksHandshake(socksSocket, domain);
 
-            SSLSocketFactory sslFactory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+            trustManager = new ChainRecordingTrustManager(platformTrustManager());
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[] {trustManager}, null);
+            SSLSocketFactory sslFactory = sslContext.getSocketFactory();
             try (SSLSocket sslSocket = (SSLSocket) sslFactory.createSocket(socksSocket, domain, 443, true)) {
                 sslSocket.setSoTimeout(SOCKET_TIMEOUT_MS);
                 sslSocket.startHandshake();
@@ -149,7 +218,12 @@ final class StrategyAutoTester {
             }
         } catch (Exception error) {
             long elapsed = System.currentTimeMillis() - start;
-            result = new DomainResult(domain, false, elapsed, error.getClass().getSimpleName() + ": " + error.getMessage());
+            String detail = error.getClass().getSimpleName() + ": " + error.getMessage();
+            String presented = trustManager == null ? null : trustManager.describeLeaf();
+            if (presented != null) {
+                detail = detail + " | peer cert: " + presented;
+            }
+            result = new DomainResult(domain, false, elapsed, detail);
         }
         AppLog.i(service, TAG, profile + " " + domain + ": " + (result.success ? "OK" : "FAILED (" + result.detail + ")")
             + " in " + result.elapsedMs + "ms");
