@@ -19,6 +19,21 @@ android {
         }
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // Checked into version control on purpose: this is the standard,
+            // non-secret Android debug certificate (password "android"). Pinning
+            // it here (instead of each machine's own ~/.android/debug.keystore)
+            // keeps local builds, CI builds, and GitHub Releases signed with the
+            // same key, so updates install cleanly over a previous debug build
+            // instead of failing with a signature mismatch.
+            storeFile = rootProject.layout.projectDirectory.file("keystore/debug.keystore").asFile
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true

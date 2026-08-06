@@ -9,6 +9,7 @@
 *.log
 *.tmp
 *.keystore
+!/keystore/debug.keystore
 *.jks
 /local.properties
 /keystore.properties
