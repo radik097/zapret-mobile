@@ -123,9 +123,6 @@ final class StrategyAutoTester {
                 AppLog.w(service, TAG, "Failed to restore configured strategy after auto-test: " + error);
             }
             AppLog.i(service, TAG, "Auto-test finished");
-            // After the log is complete, not before -- the upload must contain
-            // the results it was triggered by.
-            LogUploader.uploadTodayIfEnabled(service, "auto-test finished");
 
             List<ProfileResult> finalResults = results;
             postToMain(() -> callback.onComplete(finalResults));
