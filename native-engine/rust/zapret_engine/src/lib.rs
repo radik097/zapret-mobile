@@ -833,13 +833,13 @@ fn send_flowseal_strategy(upstream: &mut TcpStream, packet: &[u8]) -> std::io::R
 
     match tls_sni_start_split_position(packet).or_else(|| http_host_start_split_position(packet)) {
         Some(split) if split > 0 && split < packet.len() => {
-            send_first_segment_with_oob(upstream, &packet[..split])?;
+            upstream.write_all(&packet[..split])?;
             thread::sleep(Duration::from_millis(35));
             upstream.write_all(&packet[split..])?;
         }
         _ => {
             if packet.len() >= 2 {
-                send_first_segment_with_oob(upstream, &packet[..1])?;
+                upstream.write_all(&packet[..1])?;
                 upstream.write_all(&packet[1..])?;
             } else {
                 upstream.write_all(packet)?;
@@ -907,6 +907,17 @@ fn build_fake_tls_hello(packet: &[u8]) -> Option<Vec<u8>> {
 /// stream's original TTL before returning -- a failed or skipped decoy must
 /// never leave the socket in a state where the real data also gets dropped
 /// short of its destination.
+///
+/// The decoy's last byte goes out via [`send_first_segment_with_oob`]. This
+/// is safe only here, never on real data: without SO_OOBINLINE (the default
+/// on most server sockets), a receiver's normal read() silently drops the
+/// urgent-marked byte, corrupting whatever message it was part of -- fine
+/// for a disposable, low-TTL decoy that (by design) is meant to expire
+/// before it means anything to the real destination anyway, but it broke
+/// real TLS handshakes when this same helper was previously used on the
+/// split real ClientHello (BoringSSL BAD_RECORD_MAC/BAD_DECRYPT downstream,
+/// confirmed on-device: Flowseal fell back after 12 real connection
+/// failures, and every auto-test probe against it failed).
 fn send_fake_decoy(upstream: &mut TcpStream, fake: &[u8]) {
     let original_ttl = match upstream.ttl() {
         Ok(ttl) => ttl,
@@ -914,7 +925,7 @@ fn send_fake_decoy(upstream: &mut TcpStream, fake: &[u8]) {
     };
     let fake_ttl = FAKE_TTL.load(Ordering::Relaxed).max(1) as u32;
     if upstream.set_ttl(fake_ttl).is_ok() {
-        let _ = upstream.write_all(fake);
+        let _ = send_first_segment_with_oob(upstream, fake);
     }
     let _ = upstream.set_ttl(original_ttl);
 }
