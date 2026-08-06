@@ -2,5 +2,12 @@
     <color name="brand_green">#0F8A5F</color>
     <color name="brand_ink">#151A1D</color>
     <color name="brand_surface">#F6F8F7</color>
+
+    <!-- Must stay in sync with AppTheme.MIDNIGHT: the enum colours the app's
+         own views, these colour the platform's. -->
+    <color name="midnight_background">#10151A</color>
+    <color name="midnight_text">#E8F1EC</color>
+    <color name="midnight_text_secondary">#9FB3AC</color>
+    <color name="midnight_accent">#3DDC97</color>
 </resources>
 

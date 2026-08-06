@@ -1,11 +1,15 @@
 package dev.zapret.mobile;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsetsController;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -16,6 +20,52 @@ import android.widget.TextView;
 /** Shared, theme-aware view builders so Main/Settings/Strategies stay visually consistent without XML layouts. */
 final class UiKit {
     private UiKit() {
+    }
+
+    /**
+     * Applies the palette's platform theme and repaints the system bars.
+     * Must run before the content view is built, so platform-drawn surfaces
+     * (dialogs, spinner dropdowns, EditText carets) match the palette rather
+     * than defaulting to near-black text on the dark one.
+     */
+    static void applyTheme(Activity activity, AppTheme theme) {
+        activity.setTheme(theme.styleResource);
+    }
+
+    /**
+     * Colours the status bar to match the header gradient it sits above and
+     * the navigation bar to match the page. Status bar icons stay light in
+     * every palette, since all three gradients are dark enough for white.
+     *
+     * Must be called *after* setContentView: the insets controller is owned
+     * by the decor view, which does not exist until there is a content view
+     * to decorate, and asking for it earlier throws.
+     */
+    static void applyWindowChrome(Activity activity, AppTheme theme) {
+        Window window = activity.getWindow();
+        window.setStatusBarColor(theme.gradientStart);
+        window.setNavigationBarColor(theme.background);
+
+        boolean darkNavIcons = !theme.dark;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsAppearance(
+                    0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
+                controller.setSystemBarsAppearance(
+                    darkNavIcons ? WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS : 0,
+                    WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            }
+        } else {
+            View decor = window.getDecorView();
+            int flags = decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (darkNavIcons) {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            } else {
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
+            decor.setSystemUiVisibility(flags);
+        }
     }
 
     static int dp(Context context, int value) {
@@ -56,7 +106,7 @@ final class UiKit {
 
         TextView titleView = new TextView(context);
         titleView.setText(title);
-        titleView.setTextColor(theme.onAccent);
+        titleView.setTextColor(theme.onGradient);
         titleView.setTextSize(28);
         titleView.setGravity(Gravity.CENTER);
         banner.addView(titleView, fullWidth());
@@ -64,7 +114,7 @@ final class UiKit {
         if (subtitle != null) {
             TextView subtitleView = new TextView(context);
             subtitleView.setText(subtitle);
-            subtitleView.setTextColor(withAlpha(theme.onAccent, 0xCC));
+            subtitleView.setTextColor(withAlpha(theme.onGradient, 0xCC));
             subtitleView.setTextSize(14);
             subtitleView.setGravity(Gravity.CENTER);
             banner.addView(subtitleView, fullWidth(context, 8, 0));
@@ -186,13 +236,15 @@ final class UiKit {
     }
 
     /**
-     * A Spinner's closed/selected display otherwise renders with the ambient
-     * platform theme's default (dark) text color regardless of our own
-     * AppTheme, since android.R.layout.simple_spinner_item doesn't know
-     * about it -- on a dark card (Midnight) that's dark text on a dark
-     * background. This forces the closed display to theme.textPrimary. The
-     * dropdown popup itself still uses the platform's default light popup
-     * background with dark text, which stays legible regardless of theme.
+     * A Spinner's closed display sits on one of our own cards, but
+     * android.R.layout.simple_spinner_item colours its text from the platform
+     * theme, which knows nothing about which card it landed on. This forces
+     * it to theme.textPrimary.
+     *
+     * The dropdown popup is left alone deliberately: it is drawn by the
+     * platform, on the platform's own surface, and each palette now supplies
+     * a matching platform theme (see styles.xml), so it is already light on
+     * light and dark on dark.
      */
     static ArrayAdapter<String> spinnerAdapter(Context context, AppTheme theme, String[] labels) {
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, labels) {

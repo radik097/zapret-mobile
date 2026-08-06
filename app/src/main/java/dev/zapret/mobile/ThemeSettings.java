@@ -11,7 +11,7 @@ final class ThemeSettings {
 
     static AppTheme getTheme(Context context) {
         String id = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .getString(KEY_THEME, AppTheme.CLASSIC.id);
+            .getString(KEY_THEME, AppTheme.MIDNIGHT.id);
         return AppTheme.fromId(id);
     }
 

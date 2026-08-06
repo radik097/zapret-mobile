@@ -42,11 +42,13 @@ public final class StrategiesActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
         currentTheme = ThemeSettings.getTheme(this);
+        UiKit.applyTheme(this, currentTheme);
+        super.onCreate(savedInstanceState);
         currentLanguage = LanguageSettings.getLanguage(this);
         strategyRepository = new StrategyRepository(this);
         setContentView(buildContent());
+        UiKit.applyWindowChrome(this, currentTheme);
         renderPacks(strategyRepository.getCachedPacks());
     }
 
@@ -55,7 +57,8 @@ public final class StrategiesActivity extends Activity {
         super.onResume();
         // Strings resolve against the context built in attachBaseContext, so
         // a language change needs a full recreate, not a view rebuild.
-        if (LanguageSettings.getLanguage(this) != currentLanguage) {
+        if (LanguageSettings.getLanguage(this) != currentLanguage
+            || ThemeSettings.getTheme(this) != currentTheme) {
             recreate();
             return;
         }

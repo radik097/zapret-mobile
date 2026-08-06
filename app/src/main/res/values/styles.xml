@@ -1,10 +1,29 @@
 <resources>
+    <!--
+        The in-app AppTheme enum colours everything this app draws itself, but
+        anything the *platform* draws takes its colours from the Activity's
+        platform theme instead: dialogs, spinner dropdowns, EditText cursors
+        and selection handles, and any view whose text colour the app doesn't
+        set. A single Light theme for all three palettes therefore rendered
+        near-black platform text on the dark palette's dark surfaces. Each
+        palette now names its matching platform theme, applied via setTheme()
+        before the content view is built.
+
+        Status and navigation bar colours are set at runtime from the active
+        palette (UiKit.applyWindowChrome) rather than hardcoded here, for the
+        same reason.
+    -->
     <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">@color/brand_surface</item>
-        <item name="android:navigationBarColor">@color/brand_surface</item>
         <item name="android:colorAccent">@color/brand_green</item>
         <item name="android:textColorPrimary">@color/brand_ink</item>
+    </style>
+
+    <style name="AppTheme.Dark" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/midnight_accent</item>
+        <item name="android:textColorPrimary">@color/midnight_text</item>
+        <item name="android:textColorSecondary">@color/midnight_text_secondary</item>
+        <item name="android:colorBackground">@color/midnight_background</item>
     </style>
 </resources>

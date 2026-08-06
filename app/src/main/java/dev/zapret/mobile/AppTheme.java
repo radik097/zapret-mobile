@@ -2,21 +2,24 @@ package dev.zapret.mobile;
 
 /** A selectable visual design for the whole app: page background, text, accent and a header gradient. */
 enum AppTheme {
-    CLASSIC(
-        "classic",
-        R.string.theme_classic,
-        0xFFF6F8F7, 0xFF151A1D, 0xFF42514A,
-        0xFF0F8A5F, 0xFFFFFFFF,
-        0xFFFFFFFF,
-        0xFF0F8A5F, 0xFF14A874
-    ),
+    // MIDNIGHT is first because it is the default; the others follow.
     MIDNIGHT(
         "midnight",
         R.string.theme_midnight,
         0xFF10151A, 0xFFE8F1EC, 0xFF9FB3AC,
         0xFF3DDC97, 0xFF10151A,
         0xFF1A2228,
-        0xFF0B2A22, 0xFF14202B
+        0xFF0B2A22, 0xFF14202B, 0xFFE8F1EC,
+        true, R.style.AppTheme_Dark
+    ),
+    CLASSIC(
+        "classic",
+        R.string.theme_classic,
+        0xFFF6F8F7, 0xFF151A1D, 0xFF42514A,
+        0xFF0F8A5F, 0xFFFFFFFF,
+        0xFFFFFFFF,
+        0xFF0F8A5F, 0xFF14A874, 0xFFFFFFFF,
+        false, R.style.AppTheme
     ),
     AURORA(
         "aurora",
@@ -24,7 +27,8 @@ enum AppTheme {
         0xFFF3EEFF, 0xFF1B1033, 0xFF5B4B8A,
         0xFF7C4DFF, 0xFFFFFFFF,
         0xFFFFFFFF,
-        0xFF7C4DFF, 0xFF22D3C5
+        0xFF7C4DFF, 0xFF22D3C5, 0xFFFFFFFF,
+        false, R.style.AppTheme
     );
 
     final String id;
@@ -37,6 +41,22 @@ enum AppTheme {
     final int cardBackground;
     final int gradientStart;
     final int gradientEnd;
+    /**
+     * Text drawn on the header gradient. Separate from {@link #onAccent},
+     * which is for text on the flat accent colour: on a dark palette the
+     * accent is a bright green that wants dark text, while the gradient is
+     * nearly black and wants light text. Sharing one colour for both put
+     * near-black title text on the dark gradient.
+     */
+    final int onGradient;
+    /** True when surfaces are dark, so platform text and icons must be light. */
+    final boolean dark;
+    /**
+     * The platform theme to apply with {@code setTheme()} before building the
+     * content view. It colours everything the app doesn't draw itself --
+     * dialogs, spinner dropdowns, EditText cursors and selection handles.
+     */
+    final int styleResource;
 
     AppTheme(
         String id,
@@ -48,7 +68,10 @@ enum AppTheme {
         int onAccent,
         int cardBackground,
         int gradientStart,
-        int gradientEnd
+        int gradientEnd,
+        int onGradient,
+        boolean dark,
+        int styleResource
     ) {
         this.id = id;
         this.labelResource = labelResource;
@@ -60,6 +83,9 @@ enum AppTheme {
         this.cardBackground = cardBackground;
         this.gradientStart = gradientStart;
         this.gradientEnd = gradientEnd;
+        this.onGradient = onGradient;
+        this.dark = dark;
+        this.styleResource = styleResource;
     }
 
     static AppTheme fromId(String id) {
@@ -68,6 +94,6 @@ enum AppTheme {
                 return theme;
             }
         }
-        return CLASSIC;
+        return MIDNIGHT;
     }
 }

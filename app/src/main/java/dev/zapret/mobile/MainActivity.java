@@ -34,10 +34,12 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
         currentTheme = ThemeSettings.getTheme(this);
+        UiKit.applyTheme(this, currentTheme);
+        super.onCreate(savedInstanceState);
         currentLanguage = LanguageSettings.getLanguage(this);
         setContentView(buildContent());
+        UiKit.applyWindowChrome(this, currentTheme);
         updateStatus(getString(
             ZapretVpnService.isRunning() ? R.string.state_starting : R.string.state_stopped));
         requestNotificationPermissionIfNeeded();
@@ -54,10 +56,12 @@ public final class MainActivity extends Activity {
             recreate();
             return;
         }
-        AppTheme latestTheme = ThemeSettings.getTheme(this);
-        if (latestTheme != currentTheme) {
-            currentTheme = latestTheme;
-            setContentView(buildContent());
+        // A palette change also swaps the platform theme, which can only be
+        // applied before the content view exists -- so recreate rather than
+        // rebuild, same as for a language change.
+        if (ThemeSettings.getTheme(this) != currentTheme) {
+            recreate();
+            return;
         }
         // The service can have started or stopped while this screen was away
         // (notification actions, onRevoke, a crash), so the control is

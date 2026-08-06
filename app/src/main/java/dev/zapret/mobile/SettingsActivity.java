@@ -34,10 +34,12 @@ public final class SettingsActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
         currentTheme = ThemeSettings.getTheme(this);
+        UiKit.applyTheme(this, currentTheme);
+        super.onCreate(savedInstanceState);
         routingSettings = AppRoutingSettings.load(this);
         setContentView(buildContent());
+        UiKit.applyWindowChrome(this, currentTheme);
         updateRoutingUi();
     }
 
@@ -130,9 +132,9 @@ public final class SettingsActivity extends Activity {
                 if (selected != currentTheme) {
                     AppLog.userAction(SettingsActivity.this, "Selected theme: " + selected);
                     ThemeSettings.setTheme(SettingsActivity.this, selected);
-                    currentTheme = selected;
-                    setContentView(buildContent());
-                    updateRoutingUi();
+                    // The platform theme can only be swapped before the
+                    // content view exists, so rebuild the whole Activity.
+                    recreate();
                 }
             }
 
