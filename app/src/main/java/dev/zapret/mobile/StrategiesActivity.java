@@ -20,6 +20,7 @@ public final class StrategiesActivity extends Activity {
     // Flowseal first: it is the default/primary profile (fake decoy + split).
     private static final StrategyProfile[] BUILT_IN_PROFILES = {
         StrategyProfile.FLOWSEAL,
+        StrategyProfile.MULTISPLIT,
         StrategyProfile.ZAPTRET2,
         StrategyProfile.AGGRESSIVE,
         StrategyProfile.BALANCED,

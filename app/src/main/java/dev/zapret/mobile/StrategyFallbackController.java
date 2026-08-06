@@ -16,6 +16,7 @@ final class StrategyFallbackController {
     private static final int FAILURE_THRESHOLD = 3;
     private static final StrategyProfile[] ESCALATION_ORDER = {
         StrategyProfile.FLOWSEAL,
+        StrategyProfile.MULTISPLIT,
         StrategyProfile.ZAPTRET2,
         StrategyProfile.AGGRESSIVE,
         StrategyProfile.BALANCED,

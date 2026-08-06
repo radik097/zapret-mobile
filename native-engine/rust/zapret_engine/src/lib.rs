@@ -24,7 +24,14 @@ const PROFILE_AGGRESSIVE: u8 = 2;
 const PROFILE_ZAPTRET2: u8 = 3;
 const PROFILE_CUSTOM: u8 = 4;
 const PROFILE_FLOWSEAL: u8 = 5;
+const PROFILE_MULTISPLIT: u8 = 6;
+/// Highest valid profile id; keep in sync with the last `PROFILE_*` constant
+/// and with `StrategyProfile`'s enum entries on the Java side.
+const PROFILE_MAX: u8 = PROFILE_MULTISPLIT;
 const CUSTOM_DELAY_MAX_MS: u64 = 5_000;
+/// Pause between multisplit segments. Long enough that each lands in its own
+/// TCP segment rather than being coalesced, short enough not to be noticeable.
+const MULTISPLIT_DELAY_MS: u64 = 20;
 const DEFAULT_FAKE_TTL: u8 = 6;
 const MAX_FAKE_TTL: u8 = 64;
 static RUNNING: AtomicBool = AtomicBool::new(false);
@@ -112,7 +119,7 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configure(
     profile_id: i32,
     block_quic: u8,
 ) -> i32 {
-    if !(PROFILE_COMPATIBLE as i32..=PROFILE_FLOWSEAL as i32).contains(&profile_id) {
+    if !(PROFILE_COMPATIBLE as i32..=PROFILE_MAX as i32).contains(&profile_id) {
         return -1;
     }
     let vm = match env.get_java_vm() {
@@ -749,6 +756,8 @@ fn relay_with_initial_strategy(mut client: TcpStream, mut upstream: TcpStream) -
             let profile = STRATEGY_PROFILE.load(Ordering::Relaxed);
             if profile == PROFILE_FLOWSEAL {
                 send_flowseal_strategy(&mut upstream, packet)?;
+            } else if profile == PROFILE_MULTISPLIT {
+                send_multisplit_strategy(&mut upstream, packet)?;
             } else if let Some((split, delay_ms)) = initial_strategy(packet, profile) {
                 upstream.write_all(&packet[..split])?;
                 if delay_ms > 0 {
@@ -870,6 +879,66 @@ fn send_flowseal_strategy(upstream: &mut TcpStream, packet: &[u8]) -> std::io::R
         }
     }
     Ok(())
+}
+
+/// Cuts the first payload into several TCP segments instead of two, mirroring
+/// bol-van/zapret's `--dpi-desync=multisplit`. A single split defeats a DPI
+/// engine that only inspects the first segment; several splits also defeat one
+/// that reassembles a fixed number of segments, or that keys on the SNI string
+/// surviving intact within any one segment.
+///
+/// Every byte is still sent, once, in order -- this only changes how the
+/// payload is chopped into `write` calls, never its contents.
+fn send_multisplit_strategy(upstream: &mut TcpStream, packet: &[u8]) -> std::io::Result<()> {
+    let positions = multisplit_positions(packet);
+    if positions.is_empty() {
+        return upstream.write_all(packet);
+    }
+
+    let mut start = 0usize;
+    for &position in &positions {
+        upstream.write_all(&packet[start..position])?;
+        thread::sleep(Duration::from_millis(MULTISPLIT_DELAY_MS));
+        start = position;
+    }
+    upstream.write_all(&packet[start..])
+}
+
+/// Split offsets for [`send_multisplit_strategy`], strictly increasing and all
+/// strictly inside the packet. For TLS these are: after the first byte (splits
+/// the record header itself, so the record length can't be read from segment
+/// one), just inside the SNI hostname, and its midpoint -- so the hostname is
+/// spread across three segments rather than merely being preceded by a break.
+/// For plain HTTP the same idea is applied to the `Host:` header value.
+/// Returns empty for anything too short or unrecognised, meaning "send whole".
+fn multisplit_positions(packet: &[u8]) -> Vec<usize> {
+    let mut positions = Vec::with_capacity(3);
+    if packet.len() < 2 {
+        return positions;
+    }
+    positions.push(1);
+
+    if let Ok(parsed) = parse_tls_client_hello(packet) {
+        if parsed.sni_end - parsed.sni_start > 1 {
+            positions.push(parsed.sni_start + 1);
+        }
+        if let Some(mid) = parsed.sni_mid {
+            positions.push(mid);
+        }
+        positions.push(parsed.sni_end);
+    } else {
+        if let Some(start) = http_host_start_split_position(packet) {
+            positions.push(start);
+        }
+        if let Some(mid) = http_host_split_position(packet) {
+            positions.push(mid);
+        }
+    }
+
+    positions.retain(|&position| position > 0 && position < packet.len());
+    positions.sort_unstable();
+    positions.dedup();
+    positions
 }
 
 /// A small rotating pool of ordinary-looking hostnames used to build fake
@@ -1310,6 +1379,68 @@ mod tests {
         assert_eq!(
             received, packet,
             "with the decoy disabled (the default), only the real split bytes should ever arrive"
+        );
+    }
+
+    #[test]
+    fn multisplit_positions_cut_header_and_spread_the_sni() {
+        let packet = build_test_client_hello("example.com");
+        let parsed = parse_tls_client_hello(&packet).expect("valid client hello");
+        let positions = multisplit_positions(&packet);
+
+        assert!(positions.len() >= 3, "expected several cuts, got {positions:?}");
+        assert_eq!(positions[0], 1, "first cut must split the TLS record header");
+        assert!(
+            positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "positions must be strictly increasing: {positions:?}"
+        );
+        assert!(positions.iter().all(|&p| p > 0 && p < packet.len()));
+        assert!(
+            positions.iter().filter(|&&p| p > parsed.sni_start && p < parsed.sni_end).count() >= 1,
+            "at least one cut must land inside the SNI hostname: {positions:?}"
+        );
+    }
+
+    #[test]
+    fn multisplit_positions_handle_http_and_undersized_input() {
+        let request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let positions = multisplit_positions(request);
+        assert!(positions.len() >= 2, "expected HTTP host cuts, got {positions:?}");
+        assert_eq!(positions[0], 1);
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+
+        assert!(multisplit_positions(&[0x16]).is_empty());
+        assert!(multisplit_positions(&[]).is_empty());
+    }
+
+    #[test]
+    fn multisplit_strategy_delivers_every_byte_once_in_order() {
+        let packet = build_test_client_hello("example.com");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept");
+            let mut received = Vec::new();
+            socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut buf = [0u8; 4096];
+            loop {
+                match socket.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(read) => received.extend_from_slice(&buf[..read]),
+                    Err(_) => break,
+                }
+            }
+            received
+        });
+
+        let mut upstream = TcpStream::connect(addr).expect("connect");
+        send_multisplit_strategy(&mut upstream, &packet).expect("multisplit strategy");
+        drop(upstream);
+
+        let received = server.join().expect("server thread");
+        assert_eq!(
+            received, packet,
+            "multisplit must change only segmentation, never the bytes themselves"
         );
     }
 

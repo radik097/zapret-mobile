@@ -41,6 +41,7 @@ final class StrategyAutoTester {
 
     private static final StrategyProfile[] TESTABLE_PROFILES = {
         StrategyProfile.FLOWSEAL,
+        StrategyProfile.MULTISPLIT,
         StrategyProfile.ZAPTRET2,
         StrategyProfile.AGGRESSIVE,
         StrategyProfile.BALANCED,

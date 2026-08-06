@@ -9,7 +9,12 @@ enum StrategyProfile {
     // Default/primary profile: low-TTL fake decoy ClientHello + early real
     // split, mirroring bol-van/zapret's "fakedsplit" as packaged by
     // Flowseal's zapret-discord-youtube presets.
-    FLOWSEAL(5, R.string.profile_flowseal);
+    FLOWSEAL(5, R.string.profile_flowseal),
+    // Cuts the first payload into several TCP segments (record header, then
+    // twice inside the SNI) instead of two, mirroring bol-van/zapret's
+    // --dpi-desync=multisplit. Beats DPI that reassembles a fixed number of
+    // segments, which a single split does not.
+    MULTISPLIT(6, R.string.profile_multisplit);
 
     private final int nativeId;
     private final int labelResource;

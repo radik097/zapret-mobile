@@ -19,6 +19,7 @@
     <string name="profile_zaptret2">Zaptret2</string>
     <string name="profile_custom">Custom (downloaded)</string>
     <string name="profile_flowseal">Flowseal (split, recommended — optional fake decoy below)</string>
+    <string name="profile_multisplit">Multisplit (several cuts across the hostname)</string>
     <string name="routing_title">App routing</string>
     <string name="routing_selected_only">Route selected apps only</string>
     <string name="routing_all_apps_summary">All apps are routed. Changes apply on the next VPN start.</string>
@@ -79,7 +80,7 @@
     <string name="strategies_autotest_done">Auto-test finished.</string>
     <string name="strategies_autotest_row_format">%1$s: %2$d/%3$d OK, avg %4$dms</string>
     <string name="strategies_builtin_title">Built-in profiles</string>
-    <string name="strategies_builtin_subtitle">Flowseal (recommended default), Zaptret2, Aggressive, Balanced and Compatible. Changes apply on the next VPN start.</string>
+    <string name="strategies_builtin_subtitle">Flowseal (recommended default), Multisplit, Zaptret2, Aggressive, Balanced and Compatible. Changes apply on the next VPN start.</string>
     <string name="strategies_downloaded_title">Downloaded strategies</string>
     <string name="strategies_downloaded_subtitle">Fetch custom split/delay strategy packs and switch to one instantly.</string>
     <string name="strategies_fake_decoy_warning">Advanced, off by default: sends a low-TTL decoy before the real handshake. If the TTL is too high for your network, the decoy can reach the real server and break the connection instead of just confusing DPI. Only enable this if you\'ve tuned the TTL below for your own network.</string>
