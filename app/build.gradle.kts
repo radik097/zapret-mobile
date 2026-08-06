@@ -15,7 +15,19 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            // armeabi (ARMv5/v6) is intentionally excluded: the NDK removed
+            // its toolchain years ago (pre-r17), so it cannot be built with
+            // any currently supported NDK version.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = true
         }
     }
 
@@ -71,6 +83,10 @@ tasks.register<Exec>("buildRustAndroid") {
         "ndk",
         "-t",
         "arm64-v8a",
+        "-t",
+        "armeabi-v7a",
+        "-t",
+        "x86",
         "-t",
         "x86_64",
         "-o",

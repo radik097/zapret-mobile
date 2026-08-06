@@ -138,4 +138,25 @@ A request to add telemetry that would upload phone identifiers, a device fingerp
 - No native/root-level TTL or IP-fragmentation tricks (out of scope for a rootless `VpnService` app).
 - No live emulator/physical-device walkthrough of the new notification actions, themes, or Settings/Strategies screens this session.
 - No HAR/mitmproxy export.
-- No CI release/signing pipeline (CI still only builds and uploads the debug APK artifact).
+
+## Post-report update: CI fix and shared debug keystore
+
+- **`android.yml` was failing on GitHub-hosted runners**: `buildRustAndroid` (in `app/build.gradle.kts`) and `scripts/build-hev-socks5.ps1` both hardcoded the local dev machine's SDK/NDK path (`D:\Android\Sdk`), which doesn't exist on the runner (`C:\Android\android-sdk`). Both now resolve `ANDROID_SDK_ROOT`/`ANDROID_HOME`/`ANDROID_NDK_HOME` from the environment first and only fall back to the local path when unset. Verified green: run `31057191232`, `build` job in 10m49s.
+- **Added `.github/workflows/release.yml`**: on a `vX.Y.Z` tag push or manual dispatch, it verifies the tag matches `app/build.gradle.kts`'s `versionName`, builds and tests, then publishes/updates a GitHub Release with the APK attached (or `--clobber`-updates the asset if the release already exists) — this is what `UpdateManager`'s in-app update check looks for.
+- **Bug found and fixed: GitHub release APK wouldn't install over the local build.** Every machine (and every ephemeral GitHub Actions runner) that has no explicit debug signing config auto-generates its own `~/.android/debug.keystore`, so each build gets signed with a different certificate. Confirmed with `apksigner verify --print-certs`: the local build's signer was `E8:C5:60:27...61F`, the first CI-built `v0.1.0` release asset was `D0:CD:58:E1...5AD` — Android refuses to install/update an app when the new APK's certificate doesn't match what's already installed, which is exactly the reported symptom ("release from GitHub won't install"). Fix: committed the local machine's existing `debug.keystore` at `keystore/debug.keystore` (the standard, non-secret Android debug credential — password `"android"`, alias `"androiddebugkey"` — safe to check in) and wired `app/build.gradle.kts`'s `debug` `signingConfig` to it explicitly, so local builds, CI builds, and GitHub Releases all share one signing identity going forward. Rebuilt locally (signature unchanged, `E8:C5:60:27...61F`) and re-ran `release.yml` (run `31058902937`); the updated `v0.1.0` release asset now verifies with the same `E8:C5:60:27...61F` certificate.
+
+## Post-report update: multi-ABI builds (arm64-v8a, armeabi-v7a, x86, x86_64)
+
+- Added `armeabi-v7a` and `x86` to `app/build.gradle.kts`'s `ndk.abiFilters`, the `buildRustAndroid` `cargo ndk -t` target list, and `scripts/build-hev-socks5.ps1`'s `APP_ABI` list, so the Rust engine and the `hev-socks5-tunnel` native bridge both build for all four ABIs. Installed the missing `i686-linux-android` Rust target locally (`armv7-linux-androideabi` was already present) and added both new triples to the `dtolnay/rust-toolchain` `targets` in `android.yml` and `release.yml`.
+- `armeabi` (ARMv5/v6) is intentionally **not** built: the NDK removed that toolchain entirely years before the current NDK (28.2.13676358), so no supported toolchain can produce it.
+- Enabled AGP `splits { abi { ... isUniversalApk = true } }`, so `assembleDebug`/`assembleRelease` now emit `app-arm64-v8a-*.apk`, `app-armeabi-v7a-*.apk`, `app-x86-*.apk`, `app-x86_64-*.apk`, and `app-universal-*.apk`. Verified locally: all five APKs build, and `apksigner verify --print-certs` confirms all five share the same signer (`E8:C5:60:27...61F`, the pinned shared debug keystore).
+- `release.yml` now renames and publishes all five APKs per tag/dispatch as `zapret-mobile-<version>-<abi>.apk` / `-universal.apk`, and `android.yml`'s artifact upload globs `*.apk` instead of the single old `app-debug.apk` filename.
+- `UpdateManager.findApkAssetUrl` now picks the release asset matching the device's own `Build.SUPPORTED_ABIS` first, then a `-universal.apk` asset, then any `.apk` as a last resort — needed because a release now has 5 APK assets instead of 1, and downloading the wrong ABI would produce an APK that fails to install or crashes.
+
+## Still open
+
+- No native/root-level TTL or IP-fragmentation tricks (out of scope for a rootless `VpnService` app).
+- No live emulator/physical-device walkthrough of the new notification actions, themes, Settings/Strategies screens, or the multi-ABI update picker this session.
+- No HAR/mitmproxy export.
+- No production release-signing pipeline (all builds, including GitHub Releases, are signed with the shared debug key above, not a Play-Store-grade release key).
+- Multi-ABI builds were verified for arm64-v8a and x86_64 only via physical/emulator runtime in earlier sessions; armeabi-v7a and x86 builds compile and are signed correctly but have not been runtime-tested on real 32-bit hardware.

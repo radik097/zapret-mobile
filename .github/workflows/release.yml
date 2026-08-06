@@ -29,7 +29,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
@@ -61,27 +61,32 @@ jobs:
       - name: Test
         run: .\gradlew.bat test
 
-      - name: Build debug APK
+      - name: Build debug APKs (one per ABI, plus a universal APK)
         run: .\gradlew.bat assembleDebug
 
-      - name: Rename APK
-        id: apk
-        shell: pwsh
-        run: |
-          $dest = "zapret-mobile-${{ steps.version.outputs.version_name }}.apk"
-          Copy-Item "app\build\outputs\apk\debug\app-debug.apk" $dest
-          "path=$dest" >> $env:GITHUB_OUTPUT
-
-      - name: Create or update release
+      - name: Rename and publish per-ABI APKs
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $version = "${{ steps.version.outputs.version_name }}"
           $tag = "${{ steps.version.outputs.tag }}"
-          $apk = "${{ steps.apk.outputs.path }}"
+          $apkDir = "app\build\outputs\apk\debug"
+          $files = @()
+          Get-ChildItem -Path $apkDir -Filter "*.apk" | ForEach-Object {
+            $abi = if ($_.Name -match "^app-(.+)-debug\.apk$") { $Matches[1] } else { "unknown" }
+            $dest = "zapret-mobile-$version-$abi.apk"
+            Copy-Item $_.FullName $dest -Force
+            $files += $dest
+            Write-Host "Prepared $dest"
+          }
+          if ($files.Count -eq 0) {
+            throw "No APK outputs found in $apkDir"
+          }
+
           $exists = gh release view $tag --repo ${{ github.repository }} 2>$null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $apk --repo ${{ github.repository }} --clobber
+            gh release upload $tag @files --repo ${{ github.repository }} --clobber
           } else {
-            gh release create $tag $apk --repo ${{ github.repository }} --title "Zapret Mobile $tag" --generate-notes
+            gh release create $tag @files --repo ${{ github.repository }} --title "Zapret Mobile $tag" --generate-notes
           }

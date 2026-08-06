@@ -92,15 +92,42 @@ final class UpdateManager {
         });
     }
 
+    /**
+     * Releases publish one APK per ABI (zapret-mobile-<version>-<abi>.apk) plus
+     * a "-universal.apk" fallback. Picks the asset matching this device's most
+     * preferred supported ABI first, then universal, then any .apk as a last
+     * resort (older/manually-created releases without ABI splits).
+     */
     private static String findApkAssetUrl(JSONObject release) throws JSONException {
         JSONArray assets = release.optJSONArray("assets");
         if (assets == null) {
             return null;
         }
+        for (String abi : android.os.Build.SUPPORTED_ABIS) {
+            String match = findAssetUrlEndingWith(assets, "-" + abi + ".apk");
+            if (match != null) {
+                return match;
+            }
+        }
+        String universal = findAssetUrlEndingWith(assets, "-universal.apk");
+        if (universal != null) {
+            return universal;
+        }
         for (int index = 0; index < assets.length(); index += 1) {
             JSONObject asset = assets.getJSONObject(index);
             String name = asset.optString("name", "");
             if (name.endsWith(".apk")) {
+                return asset.optString("browser_download_url", null);
+            }
+        }
+        return null;
+    }
+
+    private static String findAssetUrlEndingWith(JSONArray assets, String suffix) throws JSONException {
+        for (int index = 0; index < assets.length(); index += 1) {
+            JSONObject asset = assets.getJSONObject(index);
+            String name = asset.optString("name", "");
+            if (name.endsWith(suffix)) {
                 return asset.optString("browser_download_url", null);
             }
         }

@@ -20,15 +20,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
       - name: Test
         run: .\gradlew.bat test
-      - name: Build debug APK
+      - name: Build debug APKs (one per ABI, plus a universal APK)
         run: .\gradlew.bat assembleDebug
       - uses: actions/upload-artifact@v5
         with:
           name: zapret-mobile-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
 

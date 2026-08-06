@@ -70,13 +70,13 @@ try {
         "NDK_PROJECT_PATH=." `
         "APP_BUILD_SCRIPT=Android.mk" `
         "NDK_APPLICATION_MK=Application.mk" `
-        "APP_ABI=arm64-v8a x86_64" `
+        "APP_ABI=arm64-v8a armeabi-v7a x86 x86_64" `
         "APP_CFLAGS=-O3 -DPKGNAME=hev/htproxy -DCLSNAME=TProxyService"
     if ($LASTEXITCODE -ne 0) {
         throw "ndk-build failed with exit code $LASTEXITCODE"
     }
 
-    foreach ($abi in @("arm64-v8a", "x86_64")) {
+    foreach ($abi in @("arm64-v8a", "armeabi-v7a", "x86", "x86_64")) {
         $built = Join-Path $sourceRoot "libs\$abi\libhev-socks5-tunnel.so"
         if (-not (Test-Path $built)) {
             throw "Expected hev-socks5-tunnel output missing: $built"

@@ -36,6 +36,17 @@ Physical-device smoke (device must already have VPN consent):
 powershell -ExecutionPolicy Bypass -File scripts\physical-smoke.ps1
 ```
 
+## Supported CPU architectures
+
+`assembleDebug`/`assembleRelease` produce one APK per ABI plus a universal fallback:
+
+- `arm64-v8a` — current 64-bit ARM (all modern phones/tablets/TVs).
+- `armeabi-v7a` — 32-bit ARM, devices roughly up to 2015-2016.
+- `x86` / `x86_64` — Intel/AMD tablets and Android emulators.
+- `armeabi` (ARMv5/v6) is **not** built: the Android NDK dropped its toolchain entirely years ago (pre-r17), so no currently supported NDK version can produce it.
+
+GitHub Releases (see `.github/workflows/release.yml`) publish all four split APKs plus `zapret-mobile-<version>-universal.apk`; the in-app updater (`UpdateManager`) picks the asset matching the device's own ABI automatically.
+
 ## Boundaries
 
 - No root, Magisk, iptables, nftables, NFQUEUE, custom kernel, or hidden remote fallback.
