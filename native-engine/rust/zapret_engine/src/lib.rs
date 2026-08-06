@@ -1,6 +1,6 @@
 use jni::JNIEnv as SafeJniEnv;
 use jni::JavaVM;
-use jni::objects::{GlobalRef, JClass as SafeJClass, JObject, JValue};
+use jni::objects::{GlobalRef, JClass as SafeJClass, JObject, JString, JValue};
 #[cfg(target_os = "android")]
 use socket2::{Domain, Protocol, Socket, Type};
 use std::ffi::c_void;
@@ -23,13 +23,26 @@ const PROFILE_BALANCED: u8 = 1;
 const PROFILE_AGGRESSIVE: u8 = 2;
 const PROFILE_ZAPTRET2: u8 = 3;
 const PROFILE_CUSTOM: u8 = 4;
+const PROFILE_FLOWSEAL: u8 = 5;
 const CUSTOM_DELAY_MAX_MS: u64 = 5_000;
+const DEFAULT_FAKE_TTL: u8 = 6;
+const MAX_FAKE_TTL: u8 = 64;
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static BLOCK_UDP_443: AtomicBool = AtomicBool::new(true);
-static STRATEGY_PROFILE: AtomicU8 = AtomicU8::new(PROFILE_BALANCED);
+// Flowseal is the new default/primary profile: a low-TTL fake decoy
+// ClientHello followed by an early real split, mirroring bol-van/zapret's
+// "fakedsplit" as packaged by Flowseal's zapret-discord-youtube presets.
+static STRATEGY_PROFILE: AtomicU8 = AtomicU8::new(PROFILE_FLOWSEAL);
 static CUSTOM_SPLIT: AtomicUsize = AtomicUsize::new(1);
 static CUSTOM_DELAY_MS: AtomicU64 = AtomicU64::new(0);
 static CONNECTION_FAILURES: AtomicU32 = AtomicU32::new(0);
+static FAKE_TTL: AtomicU8 = AtomicU8::new(DEFAULT_FAKE_TTL);
+// When enabled, the active strategy is only applied to connections whose
+// SNI/Host suffix-matches an entry here; everything else relays untouched.
+// Mirrors Flowseal's --hostlist targeting (e.g. Discord/YouTube only)
+// instead of desyncing every TCP connection through the tunnel.
+static HOSTLIST_ONLY: AtomicBool = AtomicBool::new(false);
+static HOSTLIST: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 static SERVER: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
 static SOCKET_PROTECTOR: OnceLock<Mutex<Option<SocketProtector>>> = OnceLock::new();
 
@@ -87,7 +100,7 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configure(
     profile_id: i32,
     block_quic: u8,
 ) -> i32 {
-    if !(PROFILE_COMPATIBLE as i32..=PROFILE_CUSTOM as i32).contains(&profile_id) {
+    if !(PROFILE_COMPATIBLE as i32..=PROFILE_FLOWSEAL as i32).contains(&profile_id) {
         return -1;
     }
     let vm = match env.get_java_vm() {
@@ -125,6 +138,43 @@ pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configureCustom
     }
     CUSTOM_SPLIT.store(split_position as usize, Ordering::SeqCst);
     CUSTOM_DELAY_MS.store(delay_ms as u64, Ordering::SeqCst);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configureFakeTtl(
+    _env: *mut JNIEnv,
+    _class: JClass,
+    ttl: i32,
+) -> i32 {
+    if ttl < 1 || ttl > MAX_FAKE_TTL as i32 {
+        return -1;
+    }
+    FAKE_TTL.store(ttl as u8, Ordering::SeqCst);
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_zapret_mobile_NativeZapretEngine_configureHostlist(
+    mut env: SafeJniEnv<'_>,
+    _class: SafeJClass<'_>,
+    domains_csv: JString<'_>,
+    hostlist_only: u8,
+) -> i32 {
+    let csv: String = match env.get_string(&domains_csv) {
+        Ok(value) => value.into(),
+        Err(_) => return -1,
+    };
+    let domains: Vec<String> = csv
+        .split(',')
+        .map(|entry| entry.trim().to_ascii_lowercase())
+        .filter(|entry| !entry.is_empty())
+        .collect();
+    match hostlist_cell().lock() {
+        Ok(mut guard) => *guard = domains,
+        Err(_) => return -2,
+    }
+    HOSTLIST_ONLY.store(hostlist_only != 0, Ordering::SeqCst);
     0
 }
 
@@ -637,14 +687,21 @@ fn relay_with_initial_strategy(mut client: TcpStream, mut upstream: TcpStream) -
     let read = client.read(&mut initial)?;
     if read > 0 {
         let packet = &initial[..read];
-        if let Some((split, delay_ms)) = initial_strategy(packet, STRATEGY_PROFILE.load(Ordering::Relaxed)) {
-            upstream.write_all(&packet[..split])?;
-            if delay_ms > 0 {
-                thread::sleep(Duration::from_millis(delay_ms));
-            }
-            upstream.write_all(&packet[split..])?;
-        } else {
+        if HOSTLIST_ONLY.load(Ordering::Relaxed) && !hostlist_allows(packet) {
             upstream.write_all(packet)?;
+        } else {
+            let profile = STRATEGY_PROFILE.load(Ordering::Relaxed);
+            if profile == PROFILE_FLOWSEAL {
+                send_flowseal_strategy(&mut upstream, packet)?;
+            } else if let Some((split, delay_ms)) = initial_strategy(packet, profile) {
+                upstream.write_all(&packet[..split])?;
+                if delay_ms > 0 {
+                    thread::sleep(Duration::from_millis(delay_ms));
+                }
+                upstream.write_all(&packet[split..])?;
+            } else {
+                upstream.write_all(packet)?;
+            }
         }
     }
 
@@ -693,6 +750,97 @@ fn zaptret2_split_position(packet: &[u8]) -> Option<usize> {
     } else {
         Some(1)
     }
+}
+
+fn hostlist_cell() -> &'static Mutex<Vec<String>> {
+    HOSTLIST.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// True if the connection's SNI/Host suffix-matches a configured hostlist
+/// entry (exact match, or a subdomain of it). Traffic whose hostname can't be
+/// determined (no SNI, no HTTP Host header) is treated as non-matching, so
+/// hostlist mode never guesses on unknown protocols.
+fn hostlist_allows(packet: &[u8]) -> bool {
+    let hostname = match extract_hostname(packet) {
+        Some(name) => name,
+        None => return false,
+    };
+    let Ok(list) = hostlist_cell().lock() else {
+        return false;
+    };
+    list.iter()
+        .any(|entry| hostname == *entry || hostname.ends_with(&format!(".{entry}")))
+}
+
+fn extract_hostname(packet: &[u8]) -> Option<String> {
+    if let Ok(parsed) = parse_tls_client_hello(packet) {
+        return Some(parsed.sni.to_ascii_lowercase());
+    }
+    let (value_start, line_end) = http_host_value_bounds(packet)?;
+    let raw = std::str::from_utf8(&packet[value_start..line_end]).ok()?.trim();
+    let host = match raw.rfind(':') {
+        Some(index) => &raw[..index],
+        None => raw,
+    };
+    Some(host.to_ascii_lowercase())
+}
+
+/// Flowseal's default technique (bol-van/zapret's "fakedsplit"): send a
+/// same-shaped decoy ClientHello with a deliberately low TTL so it expires
+/// before reaching the real server but is still seen by a DPI middlebox a few
+/// hops closer to the client, then send the real ClientHello split near its
+/// SNI start with a short delay. Falls back to a plain early split (no decoy)
+/// for non-TLS traffic, since a byte-similar fake only makes sense for TLS.
+fn send_flowseal_strategy(upstream: &mut TcpStream, packet: &[u8]) -> std::io::Result<()> {
+    if let Some(fake) = build_fake_tls_hello(packet) {
+        send_fake_decoy(upstream, &fake);
+    }
+
+    match tls_sni_start_split_position(packet).or_else(|| http_host_start_split_position(packet)) {
+        Some(split) if split > 0 && split < packet.len() => {
+            upstream.write_all(&packet[..split])?;
+            thread::sleep(Duration::from_millis(35));
+            upstream.write_all(&packet[split..])?;
+        }
+        _ => {
+            if packet.len() >= 2 {
+                upstream.write_all(&packet[..1])?;
+                upstream.write_all(&packet[1..])?;
+            } else {
+                upstream.write_all(packet)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Builds a decoy ClientHello identical in shape to the real one but with the
+/// SNI hostname bytes flipped, so length fields stay valid while the hostname
+/// itself is unreadable garbage. Returns None for non-TLS traffic (plain HTTP
+/// has no equivalent "looks real but isn't" shape worth faking).
+fn build_fake_tls_hello(packet: &[u8]) -> Option<Vec<u8>> {
+    let parsed = parse_tls_client_hello(packet).ok()?;
+    let mut fake = packet.to_vec();
+    for byte in fake[parsed.sni_start..parsed.sni_end].iter_mut() {
+        *byte ^= 0xFF;
+    }
+    Some(fake)
+}
+
+/// Sends `fake` with a temporarily lowered TTL, then always restores the
+/// stream's original TTL before returning -- a failed or skipped decoy must
+/// never leave the socket in a state where the real data also gets dropped
+/// short of its destination.
+fn send_fake_decoy(upstream: &mut TcpStream, fake: &[u8]) {
+    let original_ttl = match upstream.ttl() {
+        Ok(ttl) => ttl,
+        Err(_) => return,
+    };
+    let fake_ttl = FAKE_TTL.load(Ordering::Relaxed).max(1) as u32;
+    if upstream.set_ttl(fake_ttl).is_ok() {
+        let _ = upstream.write_all(fake);
+    }
+    let _ = upstream.set_ttl(original_ttl);
 }
 
 pub fn http_host_split_position(buf: &[u8]) -> Option<usize> {
@@ -864,6 +1012,139 @@ fn ascii_lowercase(buf: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn build_test_client_hello(hostname: &str) -> Vec<u8> {
+        let mut sni_entry = Vec::new();
+        sni_entry.push(0x00);
+        sni_entry.extend_from_slice(&(hostname.len() as u16).to_be_bytes());
+        sni_entry.extend_from_slice(hostname.as_bytes());
+
+        let mut server_name_list = Vec::new();
+        server_name_list.extend_from_slice(&(sni_entry.len() as u16).to_be_bytes());
+        server_name_list.extend_from_slice(&sni_entry);
+
+        let mut sni_extension = Vec::new();
+        sni_extension.extend_from_slice(&0x0000u16.to_be_bytes());
+        sni_extension.extend_from_slice(&(server_name_list.len() as u16).to_be_bytes());
+        sni_extension.extend_from_slice(&server_name_list);
+
+        let mut handshake_body = Vec::new();
+        handshake_body.extend_from_slice(&[0x03, 0x03]);
+        handshake_body.extend_from_slice(&[0u8; 32]);
+        handshake_body.push(0);
+        handshake_body.extend_from_slice(&2u16.to_be_bytes());
+        handshake_body.extend_from_slice(&[0x13, 0x01]);
+        handshake_body.push(1);
+        handshake_body.push(0);
+        handshake_body.extend_from_slice(&(sni_extension.len() as u16).to_be_bytes());
+        handshake_body.extend_from_slice(&sni_extension);
+
+        let mut record = Vec::new();
+        record.push(0x01);
+        let handshake_len = handshake_body.len() as u32;
+        record.push((handshake_len >> 16) as u8);
+        record.push((handshake_len >> 8) as u8);
+        record.push(handshake_len as u8);
+        record.extend_from_slice(&handshake_body);
+
+        let mut packet = Vec::new();
+        packet.push(0x16);
+        packet.extend_from_slice(&[0x03, 0x01]);
+        packet.extend_from_slice(&(record.len() as u16).to_be_bytes());
+        packet.extend_from_slice(&record);
+        packet
+    }
+
+    #[test]
+    fn tls_client_hello_fixture_parses_with_expected_sni() {
+        let packet = build_test_client_hello("example.com");
+        let parsed = parse_tls_client_hello(&packet).expect("valid client hello");
+        assert_eq!(parsed.sni, "example.com");
+        assert_eq!(&packet[parsed.sni_start..parsed.sni_end], b"example.com");
+    }
+
+    #[test]
+    fn fake_tls_hello_flips_only_sni_bytes_and_keeps_length() {
+        let packet = build_test_client_hello("example.com");
+        let fake = build_fake_tls_hello(&packet).expect("fake decoy");
+        assert_eq!(fake.len(), packet.len());
+
+        let parsed = parse_tls_client_hello(&packet).expect("valid client hello");
+        assert_ne!(&fake[parsed.sni_start..parsed.sni_end], b"example.com");
+        assert_eq!(&fake[..parsed.sni_start], &packet[..parsed.sni_start]);
+        assert_eq!(&fake[parsed.sni_end..], &packet[parsed.sni_end..]);
+    }
+
+    #[test]
+    fn fake_tls_hello_is_none_for_non_tls_traffic() {
+        let request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        assert_eq!(build_fake_tls_hello(request), None);
+    }
+
+    #[test]
+    fn flowseal_strategy_sends_decoy_then_splits_real_hello() {
+        let packet = build_test_client_hello("example.com");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept");
+            let mut received = Vec::new();
+            socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut buf = [0u8; 4096];
+            loop {
+                match socket.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(read) => received.extend_from_slice(&buf[..read]),
+                    Err(_) => break,
+                }
+            }
+            received
+        });
+
+        let mut upstream = TcpStream::connect(addr).expect("connect");
+        FAKE_TTL.store(5, Ordering::SeqCst);
+        send_flowseal_strategy(&mut upstream, &packet).expect("flowseal strategy");
+        drop(upstream);
+
+        let received = server.join().expect("server thread");
+        assert!(!received.is_empty(), "server should have received at least the decoy or real data");
+    }
+
+    #[test]
+    fn extract_hostname_reads_tls_sni() {
+        let packet = build_test_client_hello("Example.COM");
+        assert_eq!(extract_hostname(&packet), Some("example.com".to_string()));
+    }
+
+    #[test]
+    fn extract_hostname_reads_http_host_and_strips_port() {
+        let request = b"GET / HTTP/1.1\r\nHost: Example.com:8080\r\n\r\n";
+        assert_eq!(extract_hostname(request), Some("example.com".to_string()));
+    }
+
+    #[test]
+    fn extract_hostname_is_none_for_unknown_protocol() {
+        assert_eq!(extract_hostname(b"not a recognized protocol"), None);
+    }
+
+    #[test]
+    fn hostlist_allows_exact_and_subdomain_matches_only() {
+        *hostlist_cell().lock().unwrap() = vec!["discord.com".to_string(), "youtube.com".to_string()];
+
+        let exact = build_test_client_hello("discord.com");
+        assert!(hostlist_allows(&exact));
+
+        let subdomain = build_test_client_hello("gateway.discord.com");
+        assert!(hostlist_allows(&subdomain));
+
+        let unrelated = build_test_client_hello("example.com");
+        assert!(!hostlist_allows(&unrelated));
+
+        let lookalike = build_test_client_hello("notdiscord.com");
+        assert!(!hostlist_allows(&lookalike));
+
+        *hostlist_cell().lock().unwrap() = Vec::new();
+    }
 
     #[test]
     fn http_host_split_is_middle_of_host() {

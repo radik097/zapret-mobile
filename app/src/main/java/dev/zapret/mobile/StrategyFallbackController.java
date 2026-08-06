@@ -6,20 +6,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Watches the native engine's per-connection failure counter while the VPN is
- * running and automatically escalates through Compatible -> Balanced ->
- * Aggressive -> Zaptret2 when the current profile keeps failing. A downloaded
- * CUSTOM strategy is left untouched (it is not part of the escalation order),
- * since that is an explicit user choice rather than a built-in fallback step.
+ * running and automatically escalates through Flowseal (the primary, default
+ * fake+split profile) -> Zaptret2 -> Aggressive -> Balanced -> Compatible
+ * when the current profile keeps failing. A downloaded CUSTOM strategy is
+ * left untouched (it is not part of the escalation order), since that is an
+ * explicit user choice rather than a built-in fallback step.
  */
 final class StrategyFallbackController {
     private static final String TAG = "StrategyFallback";
     private static final long POLL_INTERVAL_MS = 15_000L;
     private static final int FAILURE_THRESHOLD = 3;
     private static final StrategyProfile[] ESCALATION_ORDER = {
-        StrategyProfile.COMPATIBLE,
-        StrategyProfile.BALANCED,
+        StrategyProfile.FLOWSEAL,
+        StrategyProfile.ZAPTRET2,
         StrategyProfile.AGGRESSIVE,
-        StrategyProfile.ZAPTRET2
+        StrategyProfile.BALANCED,
+        StrategyProfile.COMPATIBLE
     };
 
     interface Listener {

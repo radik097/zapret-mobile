@@ -9,6 +9,14 @@ final class EngineSettings {
     private static final String KEY_CUSTOM_SPLIT_POSITION = "custom_strategy_split_position";
     private static final String KEY_CUSTOM_DELAY_MS = "custom_strategy_delay_ms";
     private static final String KEY_CUSTOM_STRATEGY_NAME = "custom_strategy_name";
+    private static final String KEY_FAKE_TTL = "fake_ttl";
+    private static final int DEFAULT_FAKE_TTL = 6;
+    private static final String KEY_HOSTLIST_ONLY = "hostlist_only";
+    private static final String KEY_HOSTLIST_DOMAINS = "hostlist_domains";
+    // Mirrors Flowseal's default Discord/YouTube targeting.
+    static final String DEFAULT_HOSTLIST =
+        "discord.com,discordapp.com,discord.gg,discordapp.net,"
+            + "youtube.com,youtu.be,googlevideo.com,ytimg.com,ggpht.com";
 
     private EngineSettings() {
     }
@@ -27,7 +35,7 @@ final class EngineSettings {
 
     static StrategyProfile getStrategyProfile(Context context) {
         int nativeId = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .getInt(KEY_PROFILE, StrategyProfile.BALANCED.getNativeId());
+            .getInt(KEY_PROFILE, StrategyProfile.FLOWSEAL.getNativeId());
         return StrategyProfile.fromNativeId(nativeId);
     }
 
@@ -59,6 +67,36 @@ final class EngineSettings {
             .putString(KEY_CUSTOM_STRATEGY_NAME, name)
             .putInt(KEY_CUSTOM_SPLIT_POSITION, splitPosition)
             .putLong(KEY_CUSTOM_DELAY_MS, delayMs)
+            .apply();
+    }
+
+    static int getFakeTtl(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getInt(KEY_FAKE_TTL, DEFAULT_FAKE_TTL);
+    }
+
+    static void setFakeTtl(Context context, int ttl) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_FAKE_TTL, ttl)
+            .apply();
+    }
+
+    static boolean isHostlistOnly(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(KEY_HOSTLIST_ONLY, false);
+    }
+
+    static String getHostlistDomains(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(KEY_HOSTLIST_DOMAINS, DEFAULT_HOSTLIST);
+    }
+
+    static void setHostlistTargeting(Context context, boolean hostlistOnly, String domainsCsv) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HOSTLIST_ONLY, hostlistOnly)
+            .putString(KEY_HOSTLIST_DOMAINS, domainsCsv)
             .apply();
     }
 }

@@ -2,7 +2,17 @@
 
 Zapret Mobile is a rootless Android app for local traffic handling through Android `VpnService`. It does not use a remote VPN server, does not change the external IP address, and does not decrypt HTTPS traffic.
 
-Current state: working Rust-first MVP in progress. The APK requests VPN permission, creates a TUN interface, relays selected or system-wide IPv4 traffic through `hev-socks5-tunnel` and the local Rust SOCKS5/DPI engine, protects native outbound sockets with `VpnService.protect(fd)`, supports persistent Compatible/Balanced/Aggressive/Zaptret2 profiles plus downloadable custom strategy packs, and per-app routing, and can block QUIC/UDP 443. It automatically falls back through strategy profiles on repeated connection failures, can be started/stopped from the notification shade, ships three selectable visual themes (Settings screen), and checks GitHub Releases for in-app updates. Emulator and physical-device runtime are verified for the core VPN path; the newer UI/notification/update surfaces are build/lint/unit-test verified only (no live device walkthrough yet this session). Advanced QUIC analysis, HAR export, and deeper TLS/HTTP parser coverage remain in progress.
+Current state: working Rust-first MVP in progress. The APK requests VPN permission, creates a TUN interface, relays selected or system-wide IPv4 traffic through `hev-socks5-tunnel` and the local Rust SOCKS5/DPI engine, protects native outbound sockets with `VpnService.protect(fd)`, and can block QUIC/UDP 443.
+
+Strategy profiles (Strategies screen), primary first:
+
+- **Flowseal** (default) — a low-TTL fake decoy ClientHello followed by an early real split, mirroring `bol-van/zapret`'s `fake`+`split` ("fakedsplit") as packaged by Flowseal's `zapret-discord-youtube` presets. The decoy TTL is configurable per network/provider.
+- Zaptret2, Aggressive, Balanced, Compatible — simpler split-only fallbacks, auto-escalated through on repeated connection failures.
+- Custom — a downloadable split/delay strategy pack.
+
+An optional targeted mode (off by default) applies the active strategy only to a configured domain list (default: Discord/YouTube), passing everything else through untouched — mirroring Flowseal's per-service `.bat` presets instead of desyncing all traffic.
+
+Per-app routing, a foreground notification with Start/Stop actions, three selectable visual themes, and a GitHub-Releases update check (opens the release page in the browser rather than installing anything itself) round out the app. Emulator and physical-device runtime are verified for the core VPN path; the newer UI/notification/strategy-targeting surfaces are build/lint/unit-test verified only (no live device walkthrough yet this session). Advanced QUIC analysis, HAR export, and deeper TLS/HTTP parser coverage remain in progress.
 
 ## Build
 
@@ -45,7 +55,7 @@ powershell -ExecutionPolicy Bypass -File scripts\physical-smoke.ps1
 - `x86` / `x86_64` — Intel/AMD tablets and Android emulators.
 - `armeabi` (ARMv5/v6) is **not** built: the Android NDK dropped its toolchain entirely years ago (pre-r17), so no currently supported NDK version can produce it.
 
-GitHub Releases (see `.github/workflows/release.yml`) publish all four split APKs plus `zapret-mobile-<version>-universal.apk`; the in-app updater (`UpdateManager`) picks the asset matching the device's own ABI automatically.
+GitHub Releases (see `.github/workflows/release.yml`) publish all four split APKs plus `zapret-mobile-<version>-universal.apk`; the in-app updater (`UpdateManager`) opens the release page in the browser and tells you which asset matches your device's ABI, rather than downloading/installing anything itself (see `docs/WORK_REPORT_2026-08-06.md` for why).
 
 ## Boundaries
 

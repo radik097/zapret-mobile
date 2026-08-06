@@ -18,6 +18,10 @@ public final class NativeZapretEngine {
 
     public static native int configureCustomStrategy(int splitPosition, long delayMs);
 
+    public static native int configureFakeTtl(int ttl);
+
+    public static native int configureHostlist(String domainsCsv, boolean hostlistOnly);
+
     public static native int pollFailureCount();
 
     public static native int start(int socksPort);

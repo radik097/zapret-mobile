@@ -5,7 +5,11 @@ enum StrategyProfile {
     BALANCED(1, R.string.profile_balanced),
     AGGRESSIVE(2, R.string.profile_aggressive),
     ZAPTRET2(3, R.string.profile_zaptret2),
-    CUSTOM(4, R.string.profile_custom);
+    CUSTOM(4, R.string.profile_custom),
+    // Default/primary profile: low-TTL fake decoy ClientHello + early real
+    // split, mirroring bol-van/zapret's "fakedsplit" as packaged by
+    // Flowseal's zapret-discord-youtube presets.
+    FLOWSEAL(5, R.string.profile_flowseal);
 
     private final int nativeId;
     private final int labelResource;
@@ -29,6 +33,6 @@ enum StrategyProfile {
                 return profile;
             }
         }
-        return BALANCED;
+        return FLOWSEAL;
     }
 }

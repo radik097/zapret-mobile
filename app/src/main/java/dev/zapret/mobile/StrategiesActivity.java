@@ -2,24 +2,29 @@ package dev.zapret.mobile;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.List;
 
 public final class StrategiesActivity extends Activity {
+    // Flowseal first: it is the default/primary profile (fake decoy + split).
     private static final StrategyProfile[] BUILT_IN_PROFILES = {
-        StrategyProfile.COMPATIBLE,
-        StrategyProfile.BALANCED,
+        StrategyProfile.FLOWSEAL,
+        StrategyProfile.ZAPTRET2,
         StrategyProfile.AGGRESSIVE,
-        StrategyProfile.ZAPTRET2
+        StrategyProfile.BALANCED,
+        StrategyProfile.COMPATIBLE
     };
 
     private AppTheme currentTheme;
@@ -66,6 +71,7 @@ public final class StrategiesActivity extends Activity {
         body.addView(activeCard, UiKit.fullWidth(this, 0, 16));
 
         body.addView(buildBuiltInCard(), UiKit.fullWidth(this, 0, 16));
+        body.addView(buildTargetingCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildDownloadedCard(), UiKit.fullWidth());
 
         root.addView(body, UiKit.fullWidth());
@@ -116,6 +122,61 @@ public final class StrategiesActivity extends Activity {
             }
         });
         card.addView(spinner, UiKit.fullWidth());
+
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.strategies_fake_ttl_label)),
+            UiKit.fullWidth(this, 16, 4)
+        );
+        EditText ttlInput = new EditText(this);
+        ttlInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        ttlInput.setText(String.valueOf(EngineSettings.getFakeTtl(this)));
+        ttlInput.setTextColor(currentTheme.textPrimary);
+        card.addView(ttlInput, UiKit.fullWidth());
+        Button ttlSaveButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_fake_ttl_save));
+        ttlSaveButton.setOnClickListener(v -> {
+            try {
+                int ttl = Integer.parseInt(ttlInput.getText().toString().trim());
+                if (ttl < 1 || ttl > 64) {
+                    throw new NumberFormatException();
+                }
+                EngineSettings.setFakeTtl(this, ttl);
+                Toast.makeText(this, R.string.strategies_fake_ttl_saved, Toast.LENGTH_SHORT).show();
+            } catch (NumberFormatException error) {
+                Toast.makeText(this, R.string.strategies_fake_ttl_invalid, Toast.LENGTH_SHORT).show();
+            }
+        });
+        card.addView(ttlSaveButton, UiKit.fullWidth(this, 4, 0));
+        return card;
+    }
+
+    private LinearLayout buildTargetingCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(
+            UiKit.sectionTitle(this, currentTheme, getString(R.string.strategies_targeting_title)),
+            UiKit.fullWidth()
+        );
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.strategies_targeting_subtitle)),
+            UiKit.fullWidth(this, 4, 12)
+        );
+
+        Switch hostlistSwitch = UiKit.styledSwitch(this, currentTheme, getString(R.string.strategies_targeting_enable));
+        hostlistSwitch.setChecked(EngineSettings.isHostlistOnly(this));
+        card.addView(hostlistSwitch, UiKit.fullWidth(this, 0, 8));
+
+        EditText domainsInput = new EditText(this);
+        domainsInput.setText(EngineSettings.getHostlistDomains(this));
+        domainsInput.setTextColor(currentTheme.textPrimary);
+        domainsInput.setMinLines(2);
+        domainsInput.setHint(R.string.strategies_targeting_hint);
+        card.addView(domainsInput, UiKit.fullWidth(this, 0, 8));
+
+        Button saveButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_targeting_save));
+        saveButton.setOnClickListener(v -> {
+            EngineSettings.setHostlistTargeting(this, hostlistSwitch.isChecked(), domainsInput.getText().toString());
+            Toast.makeText(this, R.string.strategies_targeting_saved, Toast.LENGTH_SHORT).show();
+        });
+        card.addView(saveButton, UiKit.fullWidth(this, 4, 0));
         return card;
     }
 

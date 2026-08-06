@@ -83,6 +83,19 @@ public final class ZapretVpnService extends android.net.VpnService {
                     throw new IllegalStateException("Custom strategy configuration failed: " + customResult);
                 }
             }
+            if (profile == StrategyProfile.FLOWSEAL) {
+                int fakeTtlResult = NativeZapretEngine.configureFakeTtl(EngineSettings.getFakeTtl(this));
+                if (fakeTtlResult != 0) {
+                    throw new IllegalStateException("Fake-TTL configuration failed: " + fakeTtlResult);
+                }
+            }
+            int hostlistResult = NativeZapretEngine.configureHostlist(
+                EngineSettings.getHostlistDomains(this),
+                EngineSettings.isHostlistOnly(this)
+            );
+            if (hostlistResult != 0) {
+                throw new IllegalStateException("Hostlist configuration failed: " + hostlistResult);
+            }
             NativeZapretEngine.start(SOCKS_PORT);
             Builder builder = new Builder()
                 .setSession(getString(R.string.vpn_session))
