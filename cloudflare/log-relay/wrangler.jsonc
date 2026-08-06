@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zapret-log-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    // Repository the logs are filed against. Not a secret.
+    "GITHUB_REPO": "radik097/zapret-mobile"
+  }
+  // GITHUB_TOKEN and UPLOAD_TOKEN are secrets and are deliberately absent
+  // here -- set them with `wrangler secret put`, never in this file.
+}

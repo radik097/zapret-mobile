@@ -58,6 +58,15 @@
     <string name="diagnostics_log_clear">Clear</string>
     <string name="diagnostics_log_cleared">Today\'s log cleared.</string>
 
+    <string name="log_upload_title">Send logs automatically</string>
+    <string name="log_upload_subtitle">When the strategy auto-test finishes, send today\'s diagnostics log to the developer. It goes to a Cloudflare Worker, which files it on GitHub. The log contains your app version, strategy results and TLS errors for the test domains — it does not contain your browsing history. Off unless you turn it on.</string>
+    <string name="log_upload_enable">Send the log after each auto-test</string>
+    <string name="log_upload_url_hint">https://your-worker.workers.dev/log</string>
+    <string name="log_upload_token_hint">Shared secret (optional)</string>
+    <string name="log_upload_save">Save upload settings</string>
+    <string name="log_upload_saved">Upload settings saved.</string>
+    <string name="log_upload_https_required">The endpoint must start with https://</string>
+
     <string name="update_title">Updates</string>
     <string name="update_current_version">Installed version: %1$s</string>
     <string name="update_check_now">Check for updates</string>

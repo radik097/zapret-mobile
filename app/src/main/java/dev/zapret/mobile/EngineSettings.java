@@ -19,7 +19,43 @@ final class EngineSettings {
         "discord.com,discordapp.com,discord.gg,discordapp.net,"
             + "youtube.com,youtu.be,googlevideo.com,ytimg.com,ggpht.com";
 
+    private static final String KEY_LOG_UPLOAD_ENABLED = "log_upload_enabled";
+    private static final String KEY_LOG_UPLOAD_URL = "log_upload_url";
+    private static final String KEY_LOG_UPLOAD_TOKEN = "log_upload_token";
+
     private EngineSettings() {
+    }
+
+    /**
+     * Off by default, and deliberately so: this sends the day's diagnostics
+     * off the device to a server the user does not control from here. It must
+     * be a decision the person using the app makes explicitly, not something
+     * that happens because they ran an auto-test.
+     */
+    static boolean isLogUploadEnabled(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LOG_UPLOAD_ENABLED, false);
+    }
+
+    /** Cloudflare Worker endpoint; empty means uploading is not configured. */
+    static String getLogUploadUrl(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(KEY_LOG_UPLOAD_URL, "");
+    }
+
+    /** Shared secret the Worker checks, so the endpoint isn't open to anyone. */
+    static String getLogUploadToken(Context context) {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(KEY_LOG_UPLOAD_TOKEN, "");
+    }
+
+    static void setLogUpload(Context context, boolean enabled, String url, String token) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_LOG_UPLOAD_ENABLED, enabled)
+            .putString(KEY_LOG_UPLOAD_URL, url.trim())
+            .putString(KEY_LOG_UPLOAD_TOKEN, token.trim())
+            .apply();
     }
 
     static boolean isQuicBlocked(Context context) {

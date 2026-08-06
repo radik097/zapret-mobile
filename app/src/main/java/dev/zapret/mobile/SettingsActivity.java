@@ -8,6 +8,7 @@ import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.widget.AdapterView;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -65,6 +66,7 @@ public final class SettingsActivity extends Activity {
         body.addView(buildEngineCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildUpdateCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildDiagnosticsCard(), UiKit.fullWidth(this, 0, 16));
+        body.addView(buildLogUploadCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildAboutCard(), UiKit.fullWidth());
 
         root.addView(body, UiKit.fullWidth());
@@ -221,6 +223,49 @@ public final class SettingsActivity extends Activity {
             })
             .setPositiveButton(android.R.string.ok, null)
             .show();
+    }
+
+    private LinearLayout buildLogUploadCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(
+            UiKit.sectionTitle(this, currentTheme, getString(R.string.log_upload_title)),
+            UiKit.fullWidth()
+        );
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.log_upload_subtitle)),
+            UiKit.fullWidth(this, 4, 12)
+        );
+
+        Switch uploadSwitch =
+            UiKit.styledSwitch(this, currentTheme, getString(R.string.log_upload_enable));
+        uploadSwitch.setChecked(EngineSettings.isLogUploadEnabled(this));
+        card.addView(uploadSwitch, UiKit.fullWidth(this, 0, 12));
+
+        EditText urlField = UiKit.editText(this, currentTheme);
+        urlField.setHint(R.string.log_upload_url_hint);
+        urlField.setText(EngineSettings.getLogUploadUrl(this));
+        card.addView(urlField, UiKit.fullWidth(this, 0, 12));
+
+        EditText tokenField = UiKit.editText(this, currentTheme);
+        tokenField.setHint(R.string.log_upload_token_hint);
+        tokenField.setText(EngineSettings.getLogUploadToken(this));
+        card.addView(tokenField, UiKit.fullWidth(this, 0, 12));
+
+        Button saveButton =
+            UiKit.outlineButton(this, currentTheme, getString(R.string.log_upload_save));
+        saveButton.setOnClickListener(v -> {
+            boolean enabled = uploadSwitch.isChecked();
+            String url = urlField.getText().toString().trim();
+            if (enabled && !url.startsWith("https://")) {
+                Toast.makeText(this, R.string.log_upload_https_required, Toast.LENGTH_LONG).show();
+                return;
+            }
+            AppLog.userAction(this, "Saved log upload settings, enabled=" + enabled);
+            EngineSettings.setLogUpload(this, enabled, url, tokenField.getText().toString());
+            Toast.makeText(this, R.string.log_upload_saved, Toast.LENGTH_SHORT).show();
+        });
+        card.addView(saveButton, UiKit.fullWidth());
+        return card;
     }
 
     private LinearLayout buildAboutCard() {
