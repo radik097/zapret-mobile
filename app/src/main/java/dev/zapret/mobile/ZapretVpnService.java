@@ -22,13 +22,20 @@ public final class ZapretVpnService extends android.net.VpnService {
     private static final String TAG = "ZapretVpnService";
     private static final String CHANNEL_ID = "zapret_mobile_vpn";
     private static final int NOTIFICATION_ID = 7101;
-    private static final int SOCKS_PORT = 1080;
+    static final int SOCKS_PORT = 1080;
+
+    private static volatile ZapretVpnService runningInstance;
 
     private final AtomicReference<VpnState> state = new AtomicReference<>(VpnState.STOPPED);
     private ParcelFileDescriptor tun;
     private Tun2SocksBridge tunBridge;
     private ConnectivityManager.NetworkCallback networkCallback;
     private StrategyFallbackController fallbackController;
+
+    /** The currently running instance, or null if the VPN isn't started. Same-process only. */
+    static ZapretVpnService getRunningInstance() {
+        return runningInstance;
+    }
 
     @Override
     public void onCreate() {
@@ -71,31 +78,7 @@ public final class ZapretVpnService extends android.net.VpnService {
         try {
             StrategyProfile profile = EngineSettings.getStrategyProfile(this);
             boolean blockQuic = EngineSettings.isQuicBlocked(this);
-            int configureResult = NativeZapretEngine.configure(this, profile.getNativeId(), blockQuic);
-            if (configureResult != 0) {
-                throw new IllegalStateException("Native engine configuration failed: " + configureResult);
-            }
-            if (profile == StrategyProfile.CUSTOM) {
-                int splitPosition = EngineSettings.getCustomStrategySplitPosition(this);
-                long delayMs = EngineSettings.getCustomStrategyDelayMs(this);
-                int customResult = NativeZapretEngine.configureCustomStrategy(splitPosition, delayMs);
-                if (customResult != 0) {
-                    throw new IllegalStateException("Custom strategy configuration failed: " + customResult);
-                }
-            }
-            if (profile == StrategyProfile.FLOWSEAL) {
-                int fakeTtlResult = NativeZapretEngine.configureFakeTtl(EngineSettings.getFakeTtl(this));
-                if (fakeTtlResult != 0) {
-                    throw new IllegalStateException("Fake-TTL configuration failed: " + fakeTtlResult);
-                }
-            }
-            int hostlistResult = NativeZapretEngine.configureHostlist(
-                EngineSettings.getHostlistDomains(this),
-                EngineSettings.isHostlistOnly(this)
-            );
-            if (hostlistResult != 0) {
-                throw new IllegalStateException("Hostlist configuration failed: " + hostlistResult);
-            }
+            applyConfiguredStrategy();
             NativeZapretEngine.start(SOCKS_PORT);
             Builder builder = new Builder()
                 .setSession(getString(R.string.vpn_session))
@@ -115,6 +98,7 @@ public final class ZapretVpnService extends android.net.VpnService {
             fallbackController.setListener(this::onStrategyFallback);
             fallbackController.start();
             state.set(VpnState.RUNNING);
+            runningInstance = this;
             Log.i(TAG, "Strategy profile: " + profile.name().toLowerCase(java.util.Locale.ROOT));
             Log.i(TAG, "QUIC/UDP 443 policy: " + (blockQuic ? "blocked" : "allowed"));
             Log.i(TAG, "VPN started with TUN-to-SOCKS bridge and local SOCKS on 127.0.0.1:" + SOCKS_PORT);
@@ -123,6 +107,53 @@ public final class ZapretVpnService extends android.net.VpnService {
             Log.e(TAG, "Failed to start VPN", error);
             stopVpn();
         }
+    }
+
+    /** Applies the user's saved strategy/QUIC/hostlist settings to the native engine. */
+    void applyConfiguredStrategy() {
+        StrategyProfile profile = EngineSettings.getStrategyProfile(this);
+        boolean blockQuic = EngineSettings.isQuicBlocked(this);
+        int configureResult = NativeZapretEngine.configure(this, profile.getNativeId(), blockQuic);
+        if (configureResult != 0) {
+            throw new IllegalStateException("Native engine configuration failed: " + configureResult);
+        }
+        if (profile == StrategyProfile.CUSTOM) {
+            int splitPosition = EngineSettings.getCustomStrategySplitPosition(this);
+            long delayMs = EngineSettings.getCustomStrategyDelayMs(this);
+            int customResult = NativeZapretEngine.configureCustomStrategy(splitPosition, delayMs);
+            if (customResult != 0) {
+                throw new IllegalStateException("Custom strategy configuration failed: " + customResult);
+            }
+        }
+        if (profile == StrategyProfile.FLOWSEAL) {
+            int fakeTtlResult = NativeZapretEngine.configureFakeTtl(EngineSettings.getFakeTtl(this));
+            if (fakeTtlResult != 0) {
+                throw new IllegalStateException("Fake-TTL configuration failed: " + fakeTtlResult);
+            }
+        }
+        int hostlistResult = NativeZapretEngine.configureHostlist(
+            EngineSettings.getHostlistDomains(this),
+            EngineSettings.isHostlistOnly(this)
+        );
+        if (hostlistResult != 0) {
+            throw new IllegalStateException("Hostlist configuration failed: " + hostlistResult);
+        }
+    }
+
+    /**
+     * Temporarily switches the live native engine to `candidate` for auto-testing,
+     * bypassing hostlist targeting entirely so results reflect the strategy
+     * itself rather than whether the test domains happen to be listed. Callers
+     * must call {@link #applyConfiguredStrategy()} afterward to restore the
+     * user's real settings.
+     */
+    void applyProfileForTesting(StrategyProfile candidate) {
+        boolean blockQuic = EngineSettings.isQuicBlocked(this);
+        NativeZapretEngine.configure(this, candidate.getNativeId(), blockQuic);
+        if (candidate == StrategyProfile.FLOWSEAL) {
+            NativeZapretEngine.configureFakeTtl(EngineSettings.getFakeTtl(this));
+        }
+        NativeZapretEngine.configureHostlist("", false);
     }
 
     public boolean protectSocket(int socketFd) {
@@ -170,6 +201,9 @@ public final class ZapretVpnService extends android.net.VpnService {
 
         Log.i(TAG, "Stopping VPN");
         state.set(VpnState.STOPPING);
+        if (runningInstance == this) {
+            runningInstance = null;
+        }
         unregisterNetworkCallback();
         if (fallbackController != null) {
             fallbackController.stop();

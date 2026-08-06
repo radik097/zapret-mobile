@@ -30,6 +30,7 @@ public final class StrategiesActivity extends Activity {
     private AppTheme currentTheme;
     private StrategyRepository strategyRepository;
     private LinearLayout packsContainer;
+    private LinearLayout autoTestResultsContainer;
     private TextView activeStrategyText;
 
     @Override
@@ -70,6 +71,7 @@ public final class StrategiesActivity extends Activity {
         activeCard.addView(activeStrategyText, UiKit.fullWidth(this, 4, 0));
         body.addView(activeCard, UiKit.fullWidth(this, 0, 16));
 
+        body.addView(buildAutoTestCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildBuiltInCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildTargetingCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildDownloadedCard(), UiKit.fullWidth());
@@ -79,6 +81,106 @@ public final class StrategiesActivity extends Activity {
         scroll.setBackgroundColor(currentTheme.background);
         scroll.addView(root);
         return scroll;
+    }
+
+    private LinearLayout buildAutoTestCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(
+            UiKit.sectionTitle(this, currentTheme, getString(R.string.strategies_autotest_title)),
+            UiKit.fullWidth()
+        );
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.strategies_autotest_subtitle)),
+            UiKit.fullWidth(this, 4, 12)
+        );
+
+        Button runButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_autotest_run));
+        runButton.setOnClickListener(v -> runAutoTest(runButton));
+        card.addView(runButton, UiKit.fullWidth(this, 0, 12));
+
+        autoTestResultsContainer = new LinearLayout(this);
+        autoTestResultsContainer.setOrientation(LinearLayout.VERTICAL);
+        card.addView(autoTestResultsContainer, UiKit.fullWidth());
+        return card;
+    }
+
+    private void runAutoTest(Button runButton) {
+        ZapretVpnService service = ZapretVpnService.getRunningInstance();
+        if (service == null) {
+            Toast.makeText(this, R.string.strategies_autotest_vpn_required, Toast.LENGTH_LONG).show();
+            return;
+        }
+        runButton.setEnabled(false);
+        autoTestResultsContainer.removeAllViews();
+        Toast.makeText(this, R.string.strategies_autotest_running, Toast.LENGTH_SHORT).show();
+
+        StrategyAutoTester.runAll(service, new StrategyAutoTester.Callback() {
+            @Override
+            public void onProfileStarted(StrategyProfile profile) {
+                Toast.makeText(
+                    StrategiesActivity.this,
+                    getString(R.string.strategies_autotest_testing, getString(profile.getLabelResource())),
+                    Toast.LENGTH_SHORT
+                ).show();
+            }
+
+            @Override
+            public void onProfileFinished(StrategyAutoTester.ProfileResult result) {
+                addAutoTestResultRow(result);
+            }
+
+            @Override
+            public void onComplete(List<StrategyAutoTester.ProfileResult> results) {
+                runButton.setEnabled(true);
+                Toast.makeText(StrategiesActivity.this, R.string.strategies_autotest_done, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void addAutoTestResultRow(StrategyAutoTester.ProfileResult result) {
+        if (autoTestResultsContainer == null) {
+            return;
+        }
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        int successCount = result.successCount();
+        int total = result.domainResults.size();
+        long totalMs = 0;
+        for (StrategyAutoTester.DomainResult domainResult : result.domainResults) {
+            totalMs += domainResult.elapsedMs;
+        }
+        long avgMs = total > 0 ? totalMs / total : 0;
+
+        TextView label = new TextView(this);
+        label.setText(getString(
+            R.string.strategies_autotest_row_format,
+            getString(result.profile.getLabelResource()),
+            successCount,
+            total,
+            avgMs
+        ));
+        label.setTextColor(result.allSucceeded() ? currentTheme.accent : currentTheme.textPrimary);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+            0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        );
+        row.addView(label, labelParams);
+
+        Button applyButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_use));
+        applyButton.setEnabled(successCount > 0);
+        applyButton.setOnClickListener(v -> {
+            EngineSettings.setStrategyProfile(this, result.profile);
+            updateActiveStrategyText();
+            Toast.makeText(
+                this,
+                getString(R.string.strategies_selected, getString(result.profile.getLabelResource())),
+                Toast.LENGTH_SHORT
+            ).show();
+        });
+        row.addView(applyButton);
+
+        autoTestResultsContainer.addView(row, UiKit.fullWidth(this, 6, 6));
     }
 
     private LinearLayout buildBuiltInCard() {

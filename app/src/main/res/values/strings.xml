@@ -62,6 +62,14 @@
 
     <string name="strategies_active_title">Active strategy</string>
     <string name="strategies_active_format">Currently using: %1$s</string>
+    <string name="strategies_autotest_title">Auto-test strategies</string>
+    <string name="strategies_autotest_subtitle">Tries each built-in profile against real Discord/YouTube connections through this app\'s own engine and shows which ones actually get through your network\'s DPI right now — like zapret\'s blockcheck.sh. Requires the VPN to be running.</string>
+    <string name="strategies_autotest_run">Run auto-test</string>
+    <string name="strategies_autotest_vpn_required">Start the VPN first, then run the auto-test.</string>
+    <string name="strategies_autotest_running">Testing strategies…</string>
+    <string name="strategies_autotest_testing">Testing %1$s…</string>
+    <string name="strategies_autotest_done">Auto-test finished.</string>
+    <string name="strategies_autotest_row_format">%1$s: %2$d/%3$d OK, avg %4$dms</string>
     <string name="strategies_builtin_title">Built-in profiles</string>
     <string name="strategies_builtin_subtitle">Flowseal (recommended default), Zaptret2, Aggressive, Balanced and Compatible. Changes apply on the next VPN start.</string>
     <string name="strategies_downloaded_title">Downloaded strategies</string>
