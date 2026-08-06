@@ -9,7 +9,7 @@ use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 #[cfg(target_os = "android")]
 use std::net::ToSocketAddrs;
 #[cfg(target_os = "android")]
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -43,6 +43,7 @@ static FAKE_TTL: AtomicU8 = AtomicU8::new(DEFAULT_FAKE_TTL);
 // instead of desyncing every TCP connection through the tunnel.
 static HOSTLIST_ONLY: AtomicBool = AtomicBool::new(false);
 static HOSTLIST: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+static DECOY_ROTATION: AtomicU32 = AtomicU32::new(0);
 static SERVER: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
 static SOCKET_PROTECTOR: OnceLock<Mutex<Option<SocketProtector>>> = OnceLock::new();
 
@@ -450,6 +451,40 @@ fn protect_udp_socket(_socket: &UdpSocket) -> io::Result<()> {
     Ok(())
 }
 
+/// Sends one byte via TCP's out-of-band/URG mechanism (dpi-desync=oob): the
+/// byte still occupies its normal position in the stream's sequence space,
+/// just flagged urgent, which some DPI implementations reassemble
+/// differently than the real destination's TCP stack does. This is a plain
+/// socket flag (MSG_OOB), not raw-packet access, so it needs no elevated
+/// privileges -- unlike disorder/badseq/ts fooling.
+#[cfg(target_os = "android")]
+fn send_oob_byte(stream: &TcpStream, byte: u8) -> io::Result<()> {
+    let borrowed = unsafe { Socket::from_raw_fd(stream.as_raw_fd()) };
+    let result = borrowed.send_out_of_band(&[byte]).map(|_| ());
+    // This Socket does not own the fd (the TcpStream does); forget it so its
+    // Drop impl doesn't close a file descriptor that's still in use.
+    std::mem::forget(borrowed);
+    result
+}
+
+#[cfg(not(target_os = "android"))]
+fn send_oob_byte(stream: &mut TcpStream, byte: u8) -> io::Result<()> {
+    stream.write_all(&[byte])
+}
+
+/// Sends all but the last byte of `segment` normally, then the final byte
+/// via [`send_oob_byte`]. Falls back to a normal write for the last byte on
+/// non-Android hosts (test builds), so no byte is ever lost or duplicated.
+fn send_first_segment_with_oob(upstream: &mut TcpStream, segment: &[u8]) -> io::Result<()> {
+    if segment.is_empty() {
+        return Ok(());
+    }
+    if segment.len() > 1 {
+        upstream.write_all(&segment[..segment.len() - 1])?;
+    }
+    send_oob_byte(upstream, segment[segment.len() - 1])
+}
+
 fn run_socks_server(port: u16) {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(listener) => listener,
@@ -798,13 +833,13 @@ fn send_flowseal_strategy(upstream: &mut TcpStream, packet: &[u8]) -> std::io::R
 
     match tls_sni_start_split_position(packet).or_else(|| http_host_start_split_position(packet)) {
         Some(split) if split > 0 && split < packet.len() => {
-            upstream.write_all(&packet[..split])?;
+            send_first_segment_with_oob(upstream, &packet[..split])?;
             thread::sleep(Duration::from_millis(35));
             upstream.write_all(&packet[split..])?;
         }
         _ => {
             if packet.len() >= 2 {
-                upstream.write_all(&packet[..1])?;
+                send_first_segment_with_oob(upstream, &packet[..1])?;
                 upstream.write_all(&packet[1..])?;
             } else {
                 upstream.write_all(packet)?;
@@ -814,16 +849,57 @@ fn send_flowseal_strategy(upstream: &mut TcpStream, packet: &[u8]) -> std::io::R
     Ok(())
 }
 
+/// A small rotating pool of ordinary-looking hostnames used to build fake
+/// decoys. Cycling through several real domains (instead of one fixed
+/// reversible transform of the target's own SNI) avoids leaving a single
+/// static, fingerprintable byte pattern for DPI entropy analysis to key on.
+const DECOY_DOMAINS: [&str; 5] = [
+    "www.google.com",
+    "www.cloudflare.com",
+    "www.wikipedia.org",
+    "static.googleusercontent.com",
+    "www.microsoft.com",
+];
+
+/// ASCII filler used only when a rotation-picked domain is shorter than the
+/// hostname it's replacing; keeps the padded tail looking like ordinary
+/// label text instead of introducing null bytes or repeated punctuation.
+const DECOY_PADDING: &[u8] = b"cdn0123456789abcdefghijklmnopqrstuvwxyz";
+
+/// Builds `target_len` bytes of decoy hostname text: a rotating real-looking
+/// domain, truncated or padded with ordinary ASCII to match exactly, so the
+/// TLS record/handshake/extension length fields around it stay valid.
+fn build_decoy_hostname(target_len: usize) -> Vec<u8> {
+    if target_len == 0 {
+        return Vec::new();
+    }
+    let index = (DECOY_ROTATION.fetch_add(1, Ordering::Relaxed) as usize) % DECOY_DOMAINS.len();
+    let base = DECOY_DOMAINS[index].as_bytes();
+
+    let mut decoy = Vec::with_capacity(target_len);
+    if base.len() >= target_len {
+        decoy.extend_from_slice(&base[..target_len]);
+    } else {
+        decoy.extend_from_slice(base);
+        let mut filler = DECOY_PADDING.iter().cycle();
+        while decoy.len() < target_len {
+            decoy.push(*filler.next().expect("DECOY_PADDING is non-empty"));
+        }
+    }
+    decoy
+}
+
 /// Builds a decoy ClientHello identical in shape to the real one but with the
-/// SNI hostname bytes flipped, so length fields stay valid while the hostname
-/// itself is unreadable garbage. Returns None for non-TLS traffic (plain HTTP
-/// has no equivalent "looks real but isn't" shape worth faking).
+/// SNI hostname replaced by a plausible, unrelated domain of the exact same
+/// byte length, so length fields stay valid while the content reads as an
+/// ordinary hostname rather than high-entropy garbage. Returns None for
+/// non-TLS traffic (plain HTTP has no equivalent "looks real but isn't" shape
+/// worth faking).
 fn build_fake_tls_hello(packet: &[u8]) -> Option<Vec<u8>> {
     let parsed = parse_tls_client_hello(packet).ok()?;
     let mut fake = packet.to_vec();
-    for byte in fake[parsed.sni_start..parsed.sni_end].iter_mut() {
-        *byte ^= 0xFF;
-    }
+    let decoy_hostname = build_decoy_hostname(parsed.sni_end - parsed.sni_start);
+    fake[parsed.sni_start..parsed.sni_end].copy_from_slice(&decoy_hostname);
     Some(fake)
 }
 
@@ -1064,15 +1140,66 @@ mod tests {
     }
 
     #[test]
-    fn fake_tls_hello_flips_only_sni_bytes_and_keeps_length() {
+    fn fake_tls_hello_replaces_sni_with_plausible_domain_and_keeps_length() {
         let packet = build_test_client_hello("example.com");
         let fake = build_fake_tls_hello(&packet).expect("fake decoy");
         assert_eq!(fake.len(), packet.len());
 
         let parsed = parse_tls_client_hello(&packet).expect("valid client hello");
-        assert_ne!(&fake[parsed.sni_start..parsed.sni_end], b"example.com");
+        let decoy_sni = &fake[parsed.sni_start..parsed.sni_end];
+        assert_ne!(decoy_sni, b"example.com");
+        assert!(
+            decoy_sni.iter().all(|byte| byte.is_ascii_graphic()),
+            "decoy hostname should look like ordinary ASCII text, not binary noise: {decoy_sni:?}"
+        );
         assert_eq!(&fake[..parsed.sni_start], &packet[..parsed.sni_start]);
         assert_eq!(&fake[parsed.sni_end..], &packet[parsed.sni_end..]);
+    }
+
+    #[test]
+    fn decoy_hostname_matches_requested_length_shorter_and_longer_than_pool_entries() {
+        for &length in &[1usize, 5, 14, 40] {
+            let decoy = build_decoy_hostname(length);
+            assert_eq!(decoy.len(), length);
+            assert!(decoy.iter().all(|byte| byte.is_ascii_graphic()));
+        }
+        assert_eq!(build_decoy_hostname(0), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn decoy_hostname_rotates_across_calls() {
+        let samples: Vec<Vec<u8>> = (0..DECOY_DOMAINS.len() * 2)
+            .map(|_| build_decoy_hostname(6))
+            .collect();
+        let unique: std::collections::HashSet<_> = samples.iter().collect();
+        assert!(unique.len() > 1, "expected more than one distinct decoy across rotation");
+    }
+
+    #[test]
+    fn send_first_segment_with_oob_preserves_all_bytes_in_order() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept");
+            let mut received = Vec::new();
+            socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut buf = [0u8; 64];
+            loop {
+                match socket.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(read) => received.extend_from_slice(&buf[..read]),
+                    Err(_) => break,
+                }
+            }
+            received
+        });
+
+        let mut upstream = TcpStream::connect(addr).expect("connect");
+        send_first_segment_with_oob(&mut upstream, b"hello").expect("send segment");
+        drop(upstream);
+
+        let received = server.join().expect("server thread");
+        assert_eq!(received, b"hello");
     }
 
     #[test]
