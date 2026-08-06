@@ -11,7 +11,6 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.os.ParcelFileDescriptor;
 import android.system.OsConstants;
-import android.util.Log;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -99,12 +98,12 @@ public final class ZapretVpnService extends android.net.VpnService {
             fallbackController.start();
             state.set(VpnState.RUNNING);
             runningInstance = this;
-            Log.i(TAG, "Strategy profile: " + profile.name().toLowerCase(java.util.Locale.ROOT));
-            Log.i(TAG, "QUIC/UDP 443 policy: " + (blockQuic ? "blocked" : "allowed"));
-            Log.i(TAG, "VPN started with TUN-to-SOCKS bridge and local SOCKS on 127.0.0.1:" + SOCKS_PORT);
+            AppLog.i(this, TAG, "Strategy profile: " + profile.name().toLowerCase(java.util.Locale.ROOT));
+            AppLog.i(this, TAG, "QUIC/UDP 443 policy: " + (blockQuic ? "blocked" : "allowed"));
+            AppLog.i(this, TAG, "VPN started with TUN-to-SOCKS bridge and local SOCKS on 127.0.0.1:" + SOCKS_PORT);
         } catch (Exception error) {
             state.set(VpnState.ERROR);
-            Log.e(TAG, "Failed to start VPN", error);
+            AppLog.e(this, TAG, "Failed to start VPN", error);
             stopVpn();
         }
     }
@@ -159,9 +158,9 @@ public final class ZapretVpnService extends android.net.VpnService {
     public boolean protectSocket(int socketFd) {
         boolean protectedSocket = protect(socketFd);
         if (protectedSocket) {
-            Log.i(TAG, "Protected outbound socket fd=" + socketFd);
+            AppLog.i(this, TAG, "Protected outbound socket fd=" + socketFd);
         } else {
-            Log.e(TAG, "Failed to protect outbound socket fd=" + socketFd);
+            AppLog.e(this, TAG, "Failed to protect outbound socket fd=" + socketFd, null);
         }
         return protectedSocket;
     }
@@ -174,7 +173,7 @@ public final class ZapretVpnService extends android.net.VpnService {
             } catch (android.content.pm.PackageManager.NameNotFoundException error) {
                 throw new IllegalStateException("VPN package is not installed", error);
             }
-            Log.i(TAG, "Routing all apps except the VPN process");
+            AppLog.i(this, TAG, "Routing all apps except the VPN process");
             return;
         }
 
@@ -184,13 +183,13 @@ public final class ZapretVpnService extends android.net.VpnService {
                 builder.addAllowedApplication(packageName);
                 addedPackages += 1;
             } catch (android.content.pm.PackageManager.NameNotFoundException error) {
-                Log.w(TAG, "Ignoring uninstalled routed app: " + packageName);
+                AppLog.w(this, TAG, "Ignoring uninstalled routed app: " + packageName);
             }
         }
         if (addedPackages == 0) {
             throw new IllegalStateException("Selected-app routing requires at least one installed app");
         }
-        Log.i(TAG, "Routing " + addedPackages + " selected app(s)");
+        AppLog.i(this, TAG, "Routing " + addedPackages + " selected app(s)");
     }
 
     private synchronized void stopVpn() {
@@ -199,7 +198,7 @@ public final class ZapretVpnService extends android.net.VpnService {
             return;
         }
 
-        Log.i(TAG, "Stopping VPN");
+        AppLog.i(this, TAG, "Stopping VPN");
         state.set(VpnState.STOPPING);
         if (runningInstance == this) {
             runningInstance = null;
@@ -218,7 +217,7 @@ public final class ZapretVpnService extends android.net.VpnService {
             try {
                 tun.close();
             } catch (IOException closeError) {
-                Log.w(TAG, "Failed to close TUN", closeError);
+                AppLog.w(this, TAG, "Failed to close TUN: " + closeError);
             }
             tun = null;
         }
@@ -226,7 +225,7 @@ public final class ZapretVpnService extends android.net.VpnService {
         state.set(VpnState.STOPPED);
         postStoppedNotification();
         stopSelf();
-        Log.i(TAG, "VPN stopped");
+        AppLog.i(this, TAG, "VPN stopped");
     }
 
     private void postStoppedNotification() {
@@ -258,12 +257,12 @@ public final class ZapretVpnService extends android.net.VpnService {
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network network) {
-                Log.i(TAG, "Network available: " + network);
+                AppLog.i(ZapretVpnService.this, TAG, "Network available: " + network);
             }
 
             @Override
             public void onLost(Network network) {
-                Log.w(TAG, "Network lost: " + network);
+                AppLog.w(ZapretVpnService.this, TAG, "Network lost: " + network);
             }
         };
         manager.registerNetworkCallback(request, networkCallback);

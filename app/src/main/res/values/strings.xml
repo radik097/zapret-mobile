@@ -48,6 +48,14 @@
 
     <string name="engine_title">Engine</string>
     <string name="about_title">About</string>
+    <string name="diagnostics_log_title">Diagnostics log</string>
+    <string name="diagnostics_log_subtitle">A local log of VPN/strategy events for today only — cleared automatically when the date changes, separate from the noisy system logcat.</string>
+    <string name="diagnostics_log_view">View today\'s log</string>
+    <string name="diagnostics_log_empty">No log entries yet today.</string>
+    <string name="diagnostics_log_copy">Copy</string>
+    <string name="diagnostics_log_copied">Log copied to clipboard.</string>
+    <string name="diagnostics_log_clear">Clear</string>
+    <string name="diagnostics_log_cleared">Today\'s log cleared.</string>
 
     <string name="update_title">Updates</string>
     <string name="update_current_version">Installed version: %1$s</string>

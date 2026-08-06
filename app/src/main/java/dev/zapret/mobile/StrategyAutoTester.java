@@ -2,7 +2,6 @@ package dev.zapret.mobile;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
 
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
@@ -92,6 +91,7 @@ final class StrategyAutoTester {
 
     static void runAll(ZapretVpnService service, Callback callback) {
         EXECUTOR.execute(() -> {
+            AppLog.i(service, TAG, "Auto-test started");
             List<ProfileResult> results = new ArrayList<>();
             for (StrategyProfile profile : TESTABLE_PROFILES) {
                 postToMain(() -> callback.onProfileStarted(profile));
@@ -99,27 +99,31 @@ final class StrategyAutoTester {
 
                 List<DomainResult> domainResults = new ArrayList<>();
                 for (String domain : TEST_DOMAINS) {
-                    domainResults.add(testDomain(domain));
+                    domainResults.add(testDomain(service, profile, domain));
                 }
 
                 ProfileResult profileResult = new ProfileResult(profile, domainResults);
                 results.add(profileResult);
+                AppLog.i(service, TAG, "Profile " + profile + ": " + profileResult.successCount()
+                    + "/" + profileResult.domainResults.size() + " domains OK");
                 postToMain(() -> callback.onProfileFinished(profileResult));
             }
 
             try {
                 service.applyConfiguredStrategy();
             } catch (Exception error) {
-                Log.w(TAG, "Failed to restore configured strategy after auto-test", error);
+                AppLog.w(service, TAG, "Failed to restore configured strategy after auto-test: " + error);
             }
+            AppLog.i(service, TAG, "Auto-test finished");
 
             List<ProfileResult> finalResults = results;
             postToMain(() -> callback.onComplete(finalResults));
         });
     }
 
-    private static DomainResult testDomain(String domain) {
+    private static DomainResult testDomain(ZapretVpnService service, StrategyProfile profile, String domain) {
         long start = System.currentTimeMillis();
+        DomainResult result;
         try (Socket socksSocket = new Socket()) {
             socksSocket.connect(new InetSocketAddress("127.0.0.1", ZapretVpnService.SOCKS_PORT), SOCKET_TIMEOUT_MS);
             socksSocket.setSoTimeout(SOCKET_TIMEOUT_MS);
@@ -139,17 +143,17 @@ final class StrategyAutoTester {
                 byte[] buffer = new byte[64];
                 int read = sslSocket.getInputStream().read(buffer);
                 long elapsed = System.currentTimeMillis() - start;
-                if (read > 0) {
-                    return new DomainResult(domain, true, elapsed, "ok");
-                }
-                return new DomainResult(domain, false, elapsed, "empty_response");
+                result = read > 0
+                    ? new DomainResult(domain, true, elapsed, "ok")
+                    : new DomainResult(domain, false, elapsed, "empty_response");
             }
         } catch (Exception error) {
             long elapsed = System.currentTimeMillis() - start;
-            String detail = error.getClass().getSimpleName();
-            Log.i(TAG, "Probe failed for " + domain + ": " + detail + " " + error.getMessage());
-            return new DomainResult(domain, false, elapsed, detail);
+            result = new DomainResult(domain, false, elapsed, error.getClass().getSimpleName() + ": " + error.getMessage());
         }
+        AppLog.i(service, TAG, profile + " " + domain + ": " + (result.success ? "OK" : "FAILED (" + result.detail + ")")
+            + " in " + result.elapsedMs + "ms");
+        return result;
     }
 
     /** Speaks SOCKS5 to our own native engine's local proxy; the reply shape is fixed (see write_socks_success in lib.rs). */

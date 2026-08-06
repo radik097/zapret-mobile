@@ -1,7 +1,5 @@
 package dev.zapret.mobile;
 
-import android.util.Log;
-
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -84,11 +82,11 @@ final class StrategyFallbackController {
 
             StrategyProfile next = nextProfile(currentProfile);
             if (next == currentProfile) {
-                Log.w(TAG, "All strategy profiles exhausted (" + failures + " failures); staying on " + currentProfile);
+                AppLog.w(service, TAG, "All strategy profiles exhausted (" + failures + " failures); staying on " + currentProfile);
                 continue;
             }
 
-            Log.w(TAG, "Falling back from " + currentProfile + " to " + next + " after " + failures + " connection failures");
+            AppLog.w(service, TAG, "Falling back from " + currentProfile + " to " + next + " after " + failures + " connection failures");
             currentProfile = next;
             NativeZapretEngine.configure(service, next.getNativeId(), blockQuic);
             Listener currentListener = listener;

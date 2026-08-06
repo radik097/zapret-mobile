@@ -5,7 +5,6 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -199,9 +198,7 @@ public final class StrategiesActivity extends Activity {
             labels[index] = getString(BUILT_IN_PROFILES[index].getLabelResource());
         }
         Spinner spinner = new Spinner(this);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(adapter);
+        spinner.setAdapter(UiKit.spinnerAdapter(this, currentTheme, labels));
 
         StrategyProfile current = EngineSettings.getStrategyProfile(this);
         int selectedIndex = 0;
@@ -229,10 +226,9 @@ public final class StrategiesActivity extends Activity {
             UiKit.bodyText(this, currentTheme, getString(R.string.strategies_fake_ttl_label)),
             UiKit.fullWidth(this, 16, 4)
         );
-        EditText ttlInput = new EditText(this);
+        EditText ttlInput = UiKit.editText(this, currentTheme);
         ttlInput.setInputType(InputType.TYPE_CLASS_NUMBER);
         ttlInput.setText(String.valueOf(EngineSettings.getFakeTtl(this)));
-        ttlInput.setTextColor(currentTheme.textPrimary);
         card.addView(ttlInput, UiKit.fullWidth());
         Button ttlSaveButton = UiKit.outlineButton(this, currentTheme, getString(R.string.strategies_fake_ttl_save));
         ttlSaveButton.setOnClickListener(v -> {
@@ -266,9 +262,8 @@ public final class StrategiesActivity extends Activity {
         hostlistSwitch.setChecked(EngineSettings.isHostlistOnly(this));
         card.addView(hostlistSwitch, UiKit.fullWidth(this, 0, 8));
 
-        EditText domainsInput = new EditText(this);
+        EditText domainsInput = UiKit.editText(this, currentTheme);
         domainsInput.setText(EngineSettings.getHostlistDomains(this));
-        domainsInput.setTextColor(currentTheme.textPrimary);
         domainsInput.setMinLines(2);
         domainsInput.setHint(R.string.strategies_targeting_hint);
         card.addView(domainsInput, UiKit.fullWidth(this, 0, 8));

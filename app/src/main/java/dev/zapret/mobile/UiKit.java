@@ -4,8 +4,11 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -135,6 +138,37 @@ final class UiKit {
         switchView.setThumbTintList(thumbTint);
         switchView.setTrackTintList(trackTint);
         return switchView;
+    }
+
+    static EditText editText(Context context, AppTheme theme) {
+        EditText input = new EditText(context);
+        input.setTextColor(theme.textPrimary);
+        input.setHintTextColor(withAlpha(theme.textSecondary, 0xAA));
+        return input;
+    }
+
+    /**
+     * A Spinner's closed/selected display otherwise renders with the ambient
+     * platform theme's default (dark) text color regardless of our own
+     * AppTheme, since android.R.layout.simple_spinner_item doesn't know
+     * about it -- on a dark card (Midnight) that's dark text on a dark
+     * background. This forces the closed display to theme.textPrimary. The
+     * dropdown popup itself still uses the platform's default light popup
+     * background with dark text, which stays legible regardless of theme.
+     */
+    static ArrayAdapter<String> spinnerAdapter(Context context, AppTheme theme, String[] labels) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, labels) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                if (view instanceof TextView) {
+                    ((TextView) view).setTextColor(theme.textPrimary);
+                }
+                return view;
+            }
+        };
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        return adapter;
     }
 
     private static int withAlpha(int color, int alpha) {

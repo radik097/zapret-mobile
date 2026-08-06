@@ -7,13 +7,13 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -64,6 +64,7 @@ public final class SettingsActivity extends Activity {
         body.addView(buildRoutingCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildEngineCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildUpdateCard(), UiKit.fullWidth(this, 0, 16));
+        body.addView(buildDiagnosticsCard(), UiKit.fullWidth(this, 0, 16));
         body.addView(buildAboutCard(), UiKit.fullWidth());
 
         root.addView(body, UiKit.fullWidth());
@@ -87,9 +88,7 @@ public final class SettingsActivity extends Activity {
             labels[index] = getString(themes[index].labelResource);
         }
         Spinner themeSpinner = new Spinner(this);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        themeSpinner.setAdapter(adapter);
+        themeSpinner.setAdapter(UiKit.spinnerAdapter(this, currentTheme, labels));
         themeSpinner.setSelection(currentTheme.ordinal());
         themeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -160,6 +159,55 @@ public final class SettingsActivity extends Activity {
         return card;
     }
 
+    private LinearLayout buildDiagnosticsCard() {
+        LinearLayout card = UiKit.card(this, currentTheme);
+        card.addView(UiKit.sectionTitle(this, currentTheme, getString(R.string.diagnostics_log_title)), UiKit.fullWidth());
+        card.addView(
+            UiKit.bodyText(this, currentTheme, getString(R.string.diagnostics_log_subtitle)),
+            UiKit.fullWidth(this, 4, 12)
+        );
+
+        Button viewButton = UiKit.outlineButton(this, currentTheme, getString(R.string.diagnostics_log_view));
+        viewButton.setOnClickListener(v -> showLogDialog());
+        card.addView(viewButton, UiKit.fullWidth());
+        return card;
+    }
+
+    private void showLogDialog() {
+        String content = AppLog.readToday(this);
+        String displayText = content.isEmpty() ? getString(R.string.diagnostics_log_empty) : content;
+
+        TextView logText = new TextView(this);
+        logText.setText(displayText);
+        logText.setTextColor(currentTheme.textPrimary);
+        logText.setTextSize(12);
+        logText.setTypeface(android.graphics.Typeface.MONOSPACE);
+        int pad = UiKit.dp(this, 12);
+        logText.setPadding(pad, pad, pad, pad);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(currentTheme.cardBackground);
+        scroll.addView(logText);
+
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.diagnostics_log_title)
+            .setView(scroll)
+            .setNeutralButton(R.string.diagnostics_log_copy, (dialog, which) -> {
+                android.content.ClipboardManager clipboard =
+                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("zapret-log", content));
+                    Toast.makeText(this, R.string.diagnostics_log_copied, Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton(R.string.diagnostics_log_clear, (dialog, which) -> {
+                AppLog.clearToday(this);
+                Toast.makeText(this, R.string.diagnostics_log_cleared, Toast.LENGTH_SHORT).show();
+            })
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
     private LinearLayout buildAboutCard() {
         LinearLayout card = UiKit.card(this, currentTheme);
         card.addView(UiKit.sectionTitle(this, currentTheme, getString(R.string.about_title)), UiKit.fullWidth());
@@ -191,7 +239,7 @@ public final class SettingsActivity extends Activity {
     private void showAppSelectionDialog() {
         List<RoutableApp> apps = loadRoutableApps();
         if (apps.isEmpty()) {
-            android.widget.Toast.makeText(this, R.string.state_no_apps_found, android.widget.Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.state_no_apps_found, Toast.LENGTH_SHORT).show();
             return;
         }
 
