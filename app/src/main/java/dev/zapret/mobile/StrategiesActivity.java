@@ -42,9 +42,8 @@ public final class StrategiesActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        currentTheme = ThemeSettings.getTheme(this);
-        UiKit.applyTheme(this, currentTheme);
         super.onCreate(savedInstanceState);
+        currentTheme = ThemeSettings.getTheme(this);
         currentLanguage = LanguageSettings.getLanguage(this);
         strategyRepository = new StrategyRepository(this);
         setContentView(buildContent());

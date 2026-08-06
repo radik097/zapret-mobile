@@ -1,29 +1,24 @@
 <resources>
     <!--
-        The in-app AppTheme enum colours everything this app draws itself, but
-        anything the *platform* draws takes its colours from the Activity's
-        platform theme instead: dialogs, spinner dropdowns, EditText cursors
-        and selection handles, and any view whose text colour the app doesn't
-        set. A single Light theme for all three palettes therefore rendered
-        near-black platform text on the dark palette's dark surfaces. Each
-        palette now names its matching platform theme, applied via setTheme()
-        before the content view is built.
+        One dark platform theme, because the app is dark-surfaced in every
+        palette. It colours everything the app does not draw itself: dialogs,
+        spinner dropdowns, EditText carets and selection handles, and the
+        window background shown before the first frame.
+
+        There is deliberately no light variant. A single Light theme used to
+        be applied to all palettes, which put near-black platform text on dark
+        surfaces; the palettes now differ only by accent, so one dark theme is
+        correct for all of them and cannot drift out of step again.
 
         Status and navigation bar colours are set at runtime from the active
-        palette (UiKit.applyWindowChrome) rather than hardcoded here, for the
-        same reason.
+        palette (UiKit.applyWindowChrome), since they follow its gradient.
     -->
-    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">@color/brand_green</item>
-        <item name="android:textColorPrimary">@color/brand_ink</item>
-    </style>
-
-    <style name="AppTheme.Dark" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">@color/midnight_accent</item>
-        <item name="android:textColorPrimary">@color/midnight_text</item>
-        <item name="android:textColorSecondary">@color/midnight_text_secondary</item>
-        <item name="android:colorBackground">@color/midnight_background</item>
+        <item name="android:colorAccent">@color/accent_default</item>
+        <item name="android:colorBackground">@color/surface_background</item>
+        <item name="android:windowBackground">@color/surface_background</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
     </style>
 </resources>

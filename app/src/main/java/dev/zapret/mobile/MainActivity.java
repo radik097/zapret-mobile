@@ -34,9 +34,8 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        currentTheme = ThemeSettings.getTheme(this);
-        UiKit.applyTheme(this, currentTheme);
         super.onCreate(savedInstanceState);
+        currentTheme = ThemeSettings.getTheme(this);
         currentLanguage = LanguageSettings.getLanguage(this);
         setContentView(buildContent());
         UiKit.applyWindowChrome(this, currentTheme);
@@ -56,9 +55,8 @@ public final class MainActivity extends Activity {
             recreate();
             return;
         }
-        // A palette change also swaps the platform theme, which can only be
-        // applied before the content view exists -- so recreate rather than
-        // rebuild, same as for a language change.
+        // A palette change also repaints the system bars, so recreate rather
+        // than rebuild the views, same as for a language change.
         if (ThemeSettings.getTheme(this) != currentTheme) {
             recreate();
             return;

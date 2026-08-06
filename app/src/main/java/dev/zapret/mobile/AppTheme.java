@@ -1,91 +1,73 @@
 package dev.zapret.mobile;
 
-/** A selectable visual design for the whole app: page background, text, accent and a header gradient. */
+/**
+ * A selectable visual design for the whole app.
+ *
+ * Every palette is dark-surfaced and uses the same grey-white text: only the
+ * accent colour and the header gradient change. That is why styles.xml holds
+ * a single dark platform theme rather than one per palette -- surfaces and
+ * text cannot drift out of step with it the way they did when a light
+ * platform theme was shared by a dark palette.
+ */
 enum AppTheme {
-    // MIDNIGHT is first because it is the default; the others follow.
     MIDNIGHT(
-        "midnight",
-        R.string.theme_midnight,
-        0xFF10151A, 0xFFE8F1EC, 0xFF9FB3AC,
-        0xFF3DDC97, 0xFF10151A,
-        0xFF1A2228,
-        0xFF0B2A22, 0xFF14202B, 0xFFE8F1EC,
-        true, R.style.AppTheme_Dark
+        "midnight", R.string.theme_midnight,
+        0xFF3DDC97,
+        0xFF0B2A22, 0xFF14202B
     ),
     CLASSIC(
-        "classic",
-        R.string.theme_classic,
-        0xFFF6F8F7, 0xFF151A1D, 0xFF42514A,
-        0xFF0F8A5F, 0xFFFFFFFF,
-        0xFFFFFFFF,
-        0xFF0F8A5F, 0xFF14A874, 0xFFFFFFFF,
-        false, R.style.AppTheme
+        "classic", R.string.theme_classic,
+        0xFF16B37D,
+        0xFF0C2A1F, 0xFF103028
     ),
     AURORA(
-        "aurora",
-        R.string.theme_aurora,
-        0xFFF3EEFF, 0xFF1B1033, 0xFF5B4B8A,
-        0xFF7C4DFF, 0xFFFFFFFF,
-        0xFFFFFFFF,
-        0xFF7C4DFF, 0xFF22D3C5, 0xFFFFFFFF,
-        false, R.style.AppTheme
+        "aurora", R.string.theme_aurora,
+        0xFF9B7BFF,
+        0xFF241A45, 0xFF12303A
     );
+
+    // Shared by every palette. These are constant variables, so referencing
+    // them from the constructor is permitted despite the usual rule against
+    // touching static state during enum construction. Keep in sync with
+    // colors.xml, which feeds the same values to the platform theme.
+    private static final int BACKGROUND = 0xFF10151A;
+    private static final int CARD_BACKGROUND = 0xFF1A2228;
+    private static final int TEXT_PRIMARY = 0xFFECF1EE;
+    private static final int TEXT_SECONDARY = 0xFFA7B4B0;
+    /** Text on the dark surfaces the accent colour itself is painted on. */
+    private static final int ON_GRADIENT = 0xFFECF1EE;
 
     final String id;
     final int labelResource;
     final int background;
     final int textPrimary;
     final int textSecondary;
+    /** The one colour that distinguishes the palettes. Always bright. */
     final int accent;
+    /**
+     * Text drawn on top of the flat accent colour -- dark, because the accent
+     * is bright. Not to be confused with {@link #onGradient}: the header
+     * gradient is dark and needs light text, and sharing one colour for both
+     * once left the app's own title near-black on a near-black banner.
+     */
     final int onAccent;
     final int cardBackground;
     final int gradientStart;
     final int gradientEnd;
-    /**
-     * Text drawn on the header gradient. Separate from {@link #onAccent},
-     * which is for text on the flat accent colour: on a dark palette the
-     * accent is a bright green that wants dark text, while the gradient is
-     * nearly black and wants light text. Sharing one colour for both put
-     * near-black title text on the dark gradient.
-     */
     final int onGradient;
-    /** True when surfaces are dark, so platform text and icons must be light. */
-    final boolean dark;
-    /**
-     * The platform theme to apply with {@code setTheme()} before building the
-     * content view. It colours everything the app doesn't draw itself --
-     * dialogs, spinner dropdowns, EditText cursors and selection handles.
-     */
-    final int styleResource;
 
-    AppTheme(
-        String id,
-        int labelResource,
-        int background,
-        int textPrimary,
-        int textSecondary,
-        int accent,
-        int onAccent,
-        int cardBackground,
-        int gradientStart,
-        int gradientEnd,
-        int onGradient,
-        boolean dark,
-        int styleResource
-    ) {
+    AppTheme(String id, int labelResource, int accent, int gradientStart, int gradientEnd) {
         this.id = id;
         this.labelResource = labelResource;
-        this.background = background;
-        this.textPrimary = textPrimary;
-        this.textSecondary = textSecondary;
         this.accent = accent;
-        this.onAccent = onAccent;
-        this.cardBackground = cardBackground;
         this.gradientStart = gradientStart;
         this.gradientEnd = gradientEnd;
-        this.onGradient = onGradient;
-        this.dark = dark;
-        this.styleResource = styleResource;
+        this.onAccent = BACKGROUND;
+        this.background = BACKGROUND;
+        this.cardBackground = CARD_BACKGROUND;
+        this.textPrimary = TEXT_PRIMARY;
+        this.textSecondary = TEXT_SECONDARY;
+        this.onGradient = ON_GRADIENT;
     }
 
     static AppTheme fromId(String id) {

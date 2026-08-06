@@ -48,7 +48,7 @@
     <string name="language_subtitle">Приложение запускается на русском независимо от языка системы. Переключение перезапустит этот экран.</string>
 
     <string name="theme_title">Оформление</string>
-    <string name="theme_subtitle">Выберите визуальную тему приложения.</string>
+    <string name="theme_subtitle">Приложение всегда тёмное. Выберите цвет акцента.</string>
     <string name="theme_classic">Классический зелёный</string>
     <string name="theme_midnight">Полночь</string>
     <string name="theme_aurora">Аврора</string>

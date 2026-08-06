@@ -345,3 +345,14 @@ The earlier dark-theme fix (the theme-aware Spinner adapter) treated one symptom
 - **Midnight is now the default**: it is first in the enum, is `ThemeSettings`'s default, and is `AppTheme.fromId`'s fallback for an unrecognised saved id.
 
 **Verification**: `gradlew testDebugUnitTest lintDebug assembleDebug` green across all 4 ABIs. Walked through on the emulator with screenshots after a clean install: main screen comes up dark with a legible header; Settings, Strategies, the theme spinner's dropdown (dark surface, white text -- previously the platform's light popup) and the diagnostics log dialog (dark surface, light monospace text, green action buttons) all render light-on-dark with no unreadable text remaining.
+
+## Post-report update: dark-only, one platform theme (v0.1.10)
+
+Follow-up to the request above: the background should be dark in every palette and the text grey-white. The light palettes are gone as palettes -- Classic Green and Aurora keep their identity but only as an accent colour on the same dark surfaces.
+
+- `AppTheme` now takes just an id, a label, an accent and a header gradient. Background (`#10151A`), card (`#1A2228`), primary text (`#ECF1EE`), secondary text (`#A7B4B0`) and on-gradient text are shared constants on the enum, so a palette cannot introduce a light surface by accident. `onAccent` is the dark surface colour, because every accent is bright.
+- `styles.xml` is down to one dark platform theme, and `AppTheme.Dark` plus the per-palette `styleResource` and `dark` fields are gone with it. This removes the class of bug that produced the original report: a light platform theme can no longer be paired with dark surfaces because there is no light platform theme. It also sets `windowBackground`, so the pre-first-frame window is dark instead of flashing white.
+- `UiKit.applyTheme` is gone -- the theme comes from the manifest now, and `setTheme()` before `super.onCreate` is no longer needed anywhere. `applyWindowChrome` no longer branches on light vs dark: bar icons are light unconditionally.
+- The Design card's subtitle now says what the control actually does ("The app is always dark. Pick the accent colour." / "Приложение всегда тёмное. Выберите цвет акцента."), rather than implying the whole look changes.
+
+**Verification**: `gradlew testDebugUnitTest lintDebug assembleDebug` green across all 4 ABIs. On the emulator after a clean install, checked all three palettes: each renders dark with grey-white text, differing only in accent -- Midnight mint green, Classic a brighter green, Aurora purple (screenshots taken of Settings under Aurora and the main screen under Classic Green).

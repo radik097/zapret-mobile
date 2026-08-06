@@ -54,7 +54,7 @@
     <string name="language_switch_to" translatable="false">%1$s</string>
 
     <string name="theme_title">Design</string>
-    <string name="theme_subtitle">Pick a visual theme for the app.</string>
+    <string name="theme_subtitle">The app is always dark. Pick the accent colour.</string>
     <string name="theme_classic">Classic Green</string>
     <string name="theme_midnight">Midnight</string>
     <string name="theme_aurora">Aurora</string>
