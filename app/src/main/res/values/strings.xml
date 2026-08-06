@@ -55,11 +55,9 @@
     <string name="update_up_to_date">You are on the latest version.</string>
     <string name="update_check_error">Could not check for updates. Try again later.</string>
     <string name="update_available_title">Update available</string>
-    <string name="update_available_message">Version %1$s is available. Download and install it now?</string>
-    <string name="update_download_install">Download &amp; Install</string>
-    <string name="update_downloading">Downloading update…</string>
-    <string name="update_download_error">Failed to download the update.</string>
-    <string name="update_grant_install_permission">Allow Zapret Mobile to install apps, then try again.</string>
+    <string name="update_available_message">Version %1$s is available on GitHub.</string>
+    <string name="update_available_message_with_asset">Version %1$s is available on GitHub. Download %2$s for this device.</string>
+    <string name="update_open_release_page">Open release page</string>
 
     <string name="strategies_active_title">Active strategy</string>
     <string name="strategies_active_format">Currently using: %1$s</string>

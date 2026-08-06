@@ -10,7 +10,6 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -19,8 +18,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -29,7 +26,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Checks GitHub Releases for a newer build, then downloads and launches the system installer. */
+/**
+ * Checks GitHub Releases for a newer build and opens the release page in the
+ * browser for the user to download and install.
+ *
+ * Deliberately does NOT download the APK or launch the installer from inside
+ * this app: a VPN app that also silently fetches and installs its own APKs
+ * (REQUEST_INSTALL_PACKAGES + a self-hosted content:// APK provider) matches
+ * the exact heuristic Google Play Protect uses for "dropper" malware, and
+ * that combination is what was getting this app's sideloaded builds flagged
+ * as unsafe. Routing the actual download through the browser's normal
+ * download-then-install flow avoids that pattern; changing the signing
+ * certificate alone would not have fixed it.
+ */
 final class UpdateManager {
     private static final String TAG = "UpdateManager";
     private static final String PREFERENCES = "update_manager";
@@ -74,10 +83,11 @@ final class UpdateManager {
                 JSONObject release = new JSONObject(json);
                 String tagName = release.optString("tag_name", "");
                 String latestVersion = tagName.startsWith("v") ? tagName.substring(1) : tagName;
-                String downloadUrl = findApkAssetUrl(release);
+                String releasePageUrl = release.optString("html_url", null);
                 String currentVersion = currentVersionName(activity);
-                if (!latestVersion.isEmpty() && downloadUrl != null && isNewer(latestVersion, currentVersion)) {
-                    postToMain(activity, () -> showUpdateDialog(activity, latestVersion, downloadUrl));
+                if (!latestVersion.isEmpty() && releasePageUrl != null && isNewer(latestVersion, currentVersion)) {
+                    String recommendedAsset = findRecommendedAssetName(release);
+                    postToMain(activity, () -> showUpdateDialog(activity, latestVersion, releasePageUrl, recommendedAsset));
                 } else if (interactive) {
                     postToMain(activity, () ->
                         Toast.makeText(activity, R.string.update_up_to_date, Toast.LENGTH_SHORT).show());
@@ -94,41 +104,30 @@ final class UpdateManager {
 
     /**
      * Releases publish one APK per ABI (zapret-mobile-<version>-<abi>.apk) plus
-     * a "-universal.apk" fallback. Picks the asset matching this device's most
-     * preferred supported ABI first, then universal, then any .apk as a last
-     * resort (older/manually-created releases without ABI splits).
+     * a "-universal.apk" fallback. Used only to tell the user which filename to
+     * tap on the release page -- the download itself always goes through the
+     * browser, never through this app.
      */
-    private static String findApkAssetUrl(JSONObject release) throws JSONException {
+    private static String findRecommendedAssetName(JSONObject release) throws JSONException {
         JSONArray assets = release.optJSONArray("assets");
         if (assets == null) {
             return null;
         }
         for (String abi : android.os.Build.SUPPORTED_ABIS) {
-            String match = findAssetUrlEndingWith(assets, "-" + abi + ".apk");
+            String match = findAssetNameEndingWith(assets, "-" + abi + ".apk");
             if (match != null) {
                 return match;
             }
         }
-        String universal = findAssetUrlEndingWith(assets, "-universal.apk");
-        if (universal != null) {
-            return universal;
-        }
-        for (int index = 0; index < assets.length(); index += 1) {
-            JSONObject asset = assets.getJSONObject(index);
-            String name = asset.optString("name", "");
-            if (name.endsWith(".apk")) {
-                return asset.optString("browser_download_url", null);
-            }
-        }
-        return null;
+        return findAssetNameEndingWith(assets, "-universal.apk");
     }
 
-    private static String findAssetUrlEndingWith(JSONArray assets, String suffix) throws JSONException {
+    private static String findAssetNameEndingWith(JSONArray assets, String suffix) throws JSONException {
         for (int index = 0; index < assets.length(); index += 1) {
             JSONObject asset = assets.getJSONObject(index);
             String name = asset.optString("name", "");
             if (name.endsWith(suffix)) {
-                return asset.optString("browser_download_url", null);
+                return name;
             }
         }
         return null;
@@ -159,51 +158,20 @@ final class UpdateManager {
         }
     }
 
-    private static void showUpdateDialog(Activity activity, String latestVersion, String downloadUrl) {
+    private static void showUpdateDialog(Activity activity, String latestVersion, String releasePageUrl, String recommendedAsset) {
         if (activity.isFinishing()) {
             return;
         }
+        String message = recommendedAsset != null
+            ? activity.getString(R.string.update_available_message_with_asset, latestVersion, recommendedAsset)
+            : activity.getString(R.string.update_available_message, latestVersion);
         new AlertDialog.Builder(activity)
             .setTitle(R.string.update_available_title)
-            .setMessage(activity.getString(R.string.update_available_message, latestVersion))
+            .setMessage(message)
             .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.update_download_install, (dialog, which) -> downloadAndInstall(activity, downloadUrl))
+            .setPositiveButton(R.string.update_open_release_page, (dialog, which) ->
+                activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(releasePageUrl))))
             .show();
-    }
-
-    private static void downloadAndInstall(Activity activity, String downloadUrl) {
-        Toast.makeText(activity, R.string.update_downloading, Toast.LENGTH_SHORT).show();
-        EXECUTOR.execute(() -> {
-            try {
-                File apkFile = new File(activity.getCacheDir(), "update.apk");
-                downloadToFile(downloadUrl, apkFile);
-                postToMain(activity, () -> launchInstall(activity, apkFile));
-            } catch (Exception error) {
-                Log.w(TAG, "Update download failed", error);
-                postToMain(activity, () ->
-                    Toast.makeText(activity, R.string.update_download_error, Toast.LENGTH_LONG).show());
-            }
-        });
-    }
-
-    private static void launchInstall(Activity activity, File apkFile) {
-        PackageManager packageManager = activity.getPackageManager();
-        if (!packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(activity, R.string.update_grant_install_permission, Toast.LENGTH_LONG).show();
-            Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
-            settingsIntent.setData(Uri.parse("package:" + activity.getPackageName()));
-            activity.startActivity(settingsIntent);
-            return;
-        }
-        Uri apkUri = new Uri.Builder()
-            .scheme("content")
-            .authority(ApkFileProvider.AUTHORITY)
-            .path(apkFile.getName())
-            .build();
-        Intent installIntent = new Intent(Intent.ACTION_VIEW);
-        installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
-        installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-        activity.startActivity(installIntent);
     }
 
     private static String downloadText(String url) throws IOException {
@@ -225,30 +193,6 @@ final class UpdateManager {
                     buffer.write(chunk, 0, read);
                 }
                 return buffer.toString(StandardCharsets.UTF_8.name());
-            }
-        } finally {
-            connection.disconnect();
-        }
-    }
-
-    private static void downloadToFile(String url, File destination) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setConnectTimeout(10_000);
-        connection.setReadTimeout(30_000);
-        connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "ZapretMobile-UpdateCheck");
-        try {
-            int status = connection.getResponseCode();
-            if (status != HttpURLConnection.HTTP_OK) {
-                throw new IOException("Unexpected HTTP status " + status + " from " + url);
-            }
-            try (InputStream input = connection.getInputStream();
-                 FileOutputStream output = new FileOutputStream(destination)) {
-                byte[] chunk = new byte[8192];
-                int read;
-                while ((read = input.read(chunk)) != -1) {
-                    output.write(chunk, 0, read);
-                }
             }
         } finally {
             connection.disconnect();
