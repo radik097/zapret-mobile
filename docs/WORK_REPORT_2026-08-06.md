@@ -290,3 +290,27 @@ Of the three candidate improvements listed above, multisplit was chosen to imple
 - Wired into `StrategyProfile` (Java enum), the Strategies-screen picker, `StrategyAutoTester.TESTABLE_PROFILES`, and `StrategyFallbackController.ESCALATION_ORDER` — placed second in both, right after Flowseal.
 
 **Verification**: `cargo test` 25/25 (added three tests: split positions cut the record header and land inside the SNI and are strictly increasing; HTTP and undersized inputs handled; and a loopback test asserting the bytes received equal the original packet exactly, i.e. segmentation changed and nothing else). `gradlew testDebugUnitTest lintDebug assembleDebug` green across all 4 ABIs. Installed on the Pixel 8a as versionCode 7 / 0.1.6 (confirmed via `dumpsys`). Whether multisplit actually gets past this network's DPI is **unverified** — that is the pending on-device auto-test.
+
+## Post-report update: emulator run (x86_64, Android 16)
+
+Ran the full flow on the local emulator: installed 0.1.6, granted the VPN app-op via `appops set dev.zapret.mobile ACTIVATE_VPN allow` (the consent dialog can't be tapped non-interactively, but `appops` sets the same state), started the VPN and drove the real UI via `uiautomator dump` + `input tap`.
+
+Every profile returned **2/2**, including `MULTISPLIT` and including `discord.com`. What that does and does not establish:
+
+- **Establishes**: multisplit works functionally — a real TLS handshake and HTTP request survive four cuts. Flowseal with the decoy off no longer breaks connections (the v0.1.4 fix is correct). Version-stamping and user-action logging behave as designed.
+- **Does not establish**: anything about DPI evasion. `discord.com` succeeds here on *every* profile including Compatible, so this network applies no Discord block and no certificate substitution — there is nothing to bypass, and a profile with no splitting at all would also score 2/2. The `peer cert` diagnostic never fired because no handshake failed. Only the user's own network can answer the open question.
+
+## Post-report update: automatic log upload, built then reverted
+
+Briefly implemented automatic upload of the log after each auto-test: app → Cloudflare Worker → GitHub Issues, with the GitHub token held as a Worker secret so it never shipped inside the APK, off by default, endpoint and shared secret configured in Settings. Commit `e562e46`, reverted whole in `3253822` before any Worker was deployed — the user decided against sending anything off-device automatically and asked for manual sharing instead. Nothing was ever uploaded anywhere. Recorded here so the approach isn't re-proposed as if untried.
+
+## Post-report update: share the log as a file (v0.1.7)
+
+Replaces the reverted upload feature. The user shares the log themselves, through Android's own share sheet, and it goes as a **file** rather than as `EXTRA_TEXT` — a day's log runs to tens of kilobytes, which many share targets silently truncate or refuse when it arrives as text.
+
+- New `LogFileProvider`, a `ContentProvider` implementing exactly `query` (`DISPLAY_NAME`, `SIZE`) and `openFile` (read-only), with `insert`/`update`/`delete` throwing. A provider is required because handing out a `file://` URI has raised `FileUriExposedException` since API 24 and this app's minSdk is 26. Written by hand rather than adding androidx's `FileProvider`: the app has no library dependencies at all, and this needed to do two things.
+- `exportLog` writes the log to one dated file in `cacheDir/shared-logs/`, overwritten on each share so old copies don't accumulate, and returns its `content://` URI. Returns null on write failure so the caller reports it instead of opening a chooser for a file that isn't there.
+- The provider is `android:exported="false"` with `grantUriPermissions="true"`; access comes solely from `FLAG_GRANT_READ_URI_PERMISSION` on the share intent, one URI at a time. `resolve()` canonicalises the requested path and rejects anything landing outside the share directory — a URI arrives from another process and can't be trusted to be the bare filename we handed out.
+- Note on Play Protect: the provider removed earlier this session was flagged as part of a *dropper* pattern (`REQUEST_INSTALL_PACKAGES` + self-installing downloaded APKs). A read-only text-file provider with no install permission carries none of that signal.
+
+**Verification**: `gradlew testDebugUnitTest lintDebug assembleDebug` green across all 4 ABIs. On the emulator, tapping "Share log file" opens the system share sheet showing **"Sharing 1 file — zapret-log-2026-08-06.log"**, confirming `query` reports the name correctly and the system treats it as an attachment. `adb shell content read --uri content://dev.zapret.mobile.logs/zapret-log-2026-08-06.log` returns the log contents, confirming `openFile`. Two negative cases confirmed on-device: a percent-encoded `../../shared_prefs/engine_settings.xml` traversal is refused with `Could not resolve`, and an unknown filename with `No such shared log`.

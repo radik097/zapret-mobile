@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.net.Uri;
 import android.os.Bundle;
 import android.widget.AdapterView;
 import android.widget.Button;
@@ -183,8 +184,42 @@ public final class SettingsActivity extends Activity {
             AppLog.userAction(this, "Tapped View today's log");
             showLogDialog();
         });
-        card.addView(viewButton, UiKit.fullWidth());
+        card.addView(viewButton, UiKit.fullWidth(this, 0, 12));
+
+        Button shareButton =
+            UiKit.outlineButton(this, currentTheme, getString(R.string.diagnostics_log_share));
+        shareButton.setOnClickListener(v -> {
+            AppLog.userAction(this, "Tapped Share log");
+            shareLogFile();
+        });
+        card.addView(shareButton, UiKit.fullWidth());
         return card;
+    }
+
+    /**
+     * Hands today's log to the system share sheet as a file attachment rather
+     * than as text: a day's log runs to tens of kilobytes, which many share
+     * targets truncate or refuse outright when it arrives as EXTRA_TEXT.
+     */
+    private void shareLogFile() {
+        String content = AppLog.readToday(this);
+        if (content.isEmpty()) {
+            Toast.makeText(this, R.string.diagnostics_log_empty, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Uri uri = LogFileProvider.exportLog(this, content);
+        if (uri == null) {
+            Toast.makeText(this, R.string.diagnostics_log_share_failed, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        Intent share = new Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_SUBJECT,
+                getString(R.string.diagnostics_log_share_subject, AppLog.appVersion(this)))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(Intent.createChooser(share, getString(R.string.diagnostics_log_share)));
     }
 
     private void showLogDialog() {

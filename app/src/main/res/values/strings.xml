@@ -55,6 +55,9 @@
     <string name="diagnostics_log_empty">No log entries yet today.</string>
     <string name="diagnostics_log_copy">Copy</string>
     <string name="diagnostics_log_copied">Log copied to clipboard.</string>
+    <string name="diagnostics_log_share">Share log file</string>
+    <string name="diagnostics_log_share_subject">Zapret Mobile log — %1$s</string>
+    <string name="diagnostics_log_share_failed">Could not prepare the log file for sharing.</string>
     <string name="diagnostics_log_clear">Clear</string>
     <string name="diagnostics_log_cleared">Today\'s log cleared.</string>
 

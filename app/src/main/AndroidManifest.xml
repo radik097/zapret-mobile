@@ -37,6 +37,15 @@
             android:name=".StrategiesActivity"
             android:exported="false" />
 
+        <!-- Serves one read-only copy of the diagnostics log so it can be
+             attached to a share intent as a file. Not exported: other apps
+             reach it only through the per-share read grant on the intent. -->
+        <provider
+            android:name=".LogFileProvider"
+            android:authorities="dev.zapret.mobile.logs"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <service
             android:name=".ZapretVpnService"
             android:exported="false"
