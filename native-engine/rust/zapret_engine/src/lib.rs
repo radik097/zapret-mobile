@@ -1123,6 +1123,12 @@ fn ascii_lowercase(buf: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    /// `FAKE_DECOY_ENABLED` is process-global, but `cargo test` runs tests on
+    /// parallel threads: without this, the decoy-on test can flip the flag
+    /// while the decoy-off test is mid-send, making the latter fail
+    /// intermittently on bytes it never asked for.
+    static DECOY_FLAG_GUARD: Mutex<()> = Mutex::new(());
+
     fn build_test_client_hello(hostname: &str) -> Vec<u8> {
         let mut sni_entry = Vec::new();
         sni_entry.push(0x00);
@@ -1244,6 +1250,7 @@ mod tests {
 
     #[test]
     fn flowseal_strategy_sends_decoy_then_splits_real_hello() {
+        let _guard = DECOY_FLAG_GUARD.lock().unwrap_or_else(|e| e.into_inner());
         let packet = build_test_client_hello("example.com");
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
         let addr = listener.local_addr().expect("local addr");
@@ -1275,6 +1282,7 @@ mod tests {
 
     #[test]
     fn flowseal_strategy_skips_decoy_when_disabled_by_default() {
+        let _guard = DECOY_FLAG_GUARD.lock().unwrap_or_else(|e| e.into_inner());
         let packet = build_test_client_hello("example.com");
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
         let addr = listener.local_addr().expect("local addr");

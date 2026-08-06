@@ -1,6 +1,8 @@
 package dev.zapret.mobile;
 
 import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.os.Build;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
@@ -76,11 +78,39 @@ final class AppLog {
         todayLogFile(context, false).delete();
     }
 
+    /**
+     * The installed app version, e.g. {@code "0.1.4 (build 5)"}. Every log
+     * file opens with this and every VPN start repeats it, so a pasted log is
+     * always self-identifying -- an APK installed after a test session would
+     * otherwise make the log look like it came from the newer build.
+     */
+    static String appVersion(Context context) {
+        try {
+            PackageInfo info = context.getPackageManager()
+                .getPackageInfo(context.getPackageName(), 0);
+            long code = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? info.getLongVersionCode()
+                : info.versionCode;
+            return info.versionName + " (build " + code + ")";
+        } catch (Exception error) {
+            return "unknown";
+        }
+    }
+
     private static synchronized void write(Context context, String level, String tag, String message) {
         File file = todayLogFile(context, true);
-        String line = timestamp() + " " + level + "/" + tag + ": " + message + "\n";
+        StringBuilder text = new StringBuilder();
+        if (!file.exists()) {
+            text.append("=== Zapret Mobile ")
+                .append(appVersion(context))
+                .append(" — ")
+                .append(today())
+                .append(" ===\n");
+        }
+        text.append(timestamp()).append(" ").append(level).append("/").append(tag)
+            .append(": ").append(message).append("\n");
         try (FileOutputStream output = new FileOutputStream(file, true)) {
-            output.write(line.getBytes(StandardCharsets.UTF_8));
+            output.write(text.toString().getBytes(StandardCharsets.UTF_8));
         } catch (IOException ignored) {
             // Logging must never throw for the caller; losing a line beats crashing.
         }

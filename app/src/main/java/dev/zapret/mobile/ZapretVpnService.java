@@ -98,6 +98,8 @@ public final class ZapretVpnService extends android.net.VpnService {
             fallbackController.start();
             state.set(VpnState.RUNNING);
             runningInstance = this;
+            AppLog.i(this, TAG, "Zapret Mobile " + AppLog.appVersion(this)
+                + ", engine " + NativeZapretEngine.version());
             AppLog.i(this, TAG, "Strategy profile: " + profile.name().toLowerCase(java.util.Locale.ROOT));
             AppLog.i(this, TAG, "QUIC/UDP 443 policy: " + (blockQuic ? "blocked" : "allowed"));
             AppLog.i(this, TAG, "VPN started with TUN-to-SOCKS bridge and local SOCKS on 127.0.0.1:" + SOCKS_PORT);
